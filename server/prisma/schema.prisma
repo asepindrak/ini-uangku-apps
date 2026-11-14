@@ -1,0 +1,284 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 1. Keluarga (Multi-Tenant Family)
+model Family {
+  id              String          @id @default(uuid())
+  name            String
+  inviteCode      String          @unique
+  managerId       String
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  
+  users           User[]
+  wallets         Wallet[]
+  categories      Category[]
+  transactions    Transaction[]
+  recurringBills  RecurringBill[]
+  sinkingFunds    SinkingFund[]
+  assets          FamilyAsset[]
+  debts           FamilyDebt[]
+  pendingActions  PendingAction[]
+  whitelists      BotWhitelist[]
+  llmConfig       LlmConfig?
+}
+
+// 2. User & Peran
+enum UserRole {
+  MANAGER
+  MEMBER
+}
+
+model User {
+  id              String          @id @default(uuid())
+  familyId        String
+  family          Family          @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  name            String
+  email           String?         @unique
+  passwordHash    String?
+  role            UserRole        @default(MEMBER)
+  
+  countryCode     String          @default("+62")
+  whatsappNumber  String?
+  whatsappJid     String?         @unique
+  telegramChatId  String?         @unique
+  
+  avatarUrl       String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  
+  wallets         Wallet[]
+  transactions    Transaction[]
+  pendingActions  PendingAction[]
+}
+
+// 3. Multi-Wallet
+enum WalletType {
+  BANK
+  E_WALLET
+  CASH
+  INVESTMENT
+}
+
+model Wallet {
+  id              String          @id @default(uuid())
+  familyId        String
+  family          Family          @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  userId          String?
+  user            User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  name            String
+  type            WalletType      @default(BANK)
+  accountNumber   String?
+  balance         Decimal         @default(0) @db.Decimal(15, 2)
+  colorCode       String?
+  isShared        Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  transactions    Transaction[]
+}
+
+// 4. Kategori & Guardrails
+enum TransactionType {
+  INCOME
+  EXPENSE
+  TRANSFER
+  SINKING_FUND_ALLOCATION
+}
+
+model Category {
+  id              String          @id @default(uuid())
+  familyId        String
+  family          Family          @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  name            String
+  icon            String          @default("tag")
+  color           String          @default("#C1ECFD")
+  type            TransactionType @default(EXPENSE)
+  monthlyBudget   Decimal?        @db.Decimal(15, 2)
+  alertThreshold  Int             @default(80)
+  isAlertSent     Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  transactions    Transaction[]
+}
+
+// 5. Transaksi Keuangan
+enum InputSource {
+  WHATSAPP_TEXT
+  WHATSAPP_IMAGE_RECEIPT
+  WHATSAPP_IMAGE_PAPER
+  WHATSAPP_VOICE_NOTE
+  TELEGRAM_TEXT
+  TELEGRAM_IMAGE_RECEIPT
+  TELEGRAM_IMAGE_PAPER
+  TELEGRAM_VOICE_NOTE
+  APP_MANUAL
+  AUTO_RECURRING
+  AUTO_SINKING_FUND
+}
+
+model Transaction {
+  id              String          @id @default(uuid())
+  familyId        String
+  family          Family          @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  walletId        String
+  wallet          Wallet          @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  categoryId      String?
+  category        Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  userId          String?
+  user            User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  type            TransactionType @default(EXPENSE)
+  amount          Decimal         @db.Decimal(15, 2)
+  description     String
+  transactionDate DateTime        @default(now())
+  
+  inputSource     InputSource     @default(APP_MANUAL)
+  rawMediaUrl     String?
+  aiRawResponse   Json?
+  
+  pendingActionId String?
+  
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+// 6. Engine Persetujuan Bot (Human-in-the-Loop)
+enum ActionType {
+  CREATE_TRANSACTION
+  UPDATE_TRANSACTION
+  DELETE_TRANSACTION
+  EXECUTE_RECURRING_BILL
+  EXECUTE_SINKING_FUND
+}
+
+enum ActionStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+model PendingAction {
+  id              String          @id @default(uuid())
+  familyId        String
+  family          Family          @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actionType      ActionType
+  status          ActionStatus    @default(PENDING_APPROVAL)
+  proposedPayload Json
+  summaryText     String
+  expiresAt       DateTime
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+// 7. Tagihan Rutin Bulanan
+model RecurringBill {
+  id              String          @id @default(uuid())
+  familyId        String
+  family          Family          @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  name            String
+  amount          Decimal         @db.Decimal(15, 2)
+  dueDayOfMonth   Int
+  walletId        String
+  categoryId      String
+  isActive        Boolean         @default(true)
+  lastExecutedAt  DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+// 8. Sinking Funds
+model SinkingFund {
+  id              String          @id @default(uuid())
+  familyId        String
+  family          Family          @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  name            String
+  targetAmount    Decimal         @db.Decimal(15, 2)
+  currentAmount   Decimal         @default(0) @db.Decimal(15, 2)
+  monthlyAlloc    Decimal         @db.Decimal(15, 2)
+  sourceWalletId  String
+  isActive        Boolean         @default(true)
+  lastAllocatedAt DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+// 9. Net Worth (Aset & Cicilan)
+enum AssetType {
+  GOLD_PRECIOUS_METAL
+  MUTUAL_FUND_STOCK
+  PROPERTY_LAND
+  VEHICLE
+  OTHER
+}
+
+model FamilyAsset {
+  id              String          @id @default(uuid())
+  familyId        String
+  family          Family          @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  name            String
+  type            AssetType       @default(OTHER)
+  acquisitionCost Decimal         @db.Decimal(15, 2)
+  currentValue    Decimal         @db.Decimal(15, 2)
+  notes           String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+model FamilyDebt {
+  id              String          @id @default(uuid())
+  familyId        String
+  family          Family          @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  name            String
+  principalAmount Decimal         @db.Decimal(15, 2)
+  remainingAmount Decimal         @db.Decimal(15, 2)
+  monthlyPayment  Decimal         @db.Decimal(15, 2)
+  dueDayOfMonth   Int
+  totalTenorMonth Int
+  remainingTenor  Int
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+// 10. Whitelist Keamanan Bot
+model BotWhitelist {
+  id              String          @id @default(uuid())
+  familyId        String
+  family          Family          @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  platform        String          // "WHATSAPP" | "TELEGRAM"
+  identifier      String          // Phone with country code or Telegram Chat ID
+  name            String
+  canRecord       Boolean         @default(true)
+  canViewReports  Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+
+  @@unique([familyId, platform, identifier])
+}
+
+// 11. Multi-LLM Provider Config
+model LlmConfig {
+  id              String          @id @default(uuid())
+  familyId        String          @unique
+  family          Family          @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  activeProvider  String          @default("gemini") // "gemini" | "openai" | "claude" | "custom"
+  apiKey          String?
+  baseUrl         String?
+  modelName       String          @default("gemini-2.0-flash")
+  temperature     Float           @default(0.2)
+  updatedAt       DateTime        @updatedAt
+}
+
+// 12. Persistent Backup WhatsApp Session Storage (Fail-safe di PostgreSQL)
+model BotSession {
+  key             String          @id
+  data            String          @db.Text
+  updatedAt       DateTime        @updatedAt
+}
