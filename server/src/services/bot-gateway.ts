@@ -584,7 +584,7 @@ export class BotGateway {
     if (!processed.amount || processed.amount <= 0) {
       await this.sendWhatsAppMessage(
         remoteJid,
-        'Mohon maaf, nominal pengeluaran belum terbaca dengan jelas. Bisa disebutkan kembali keperluan dan nominalnya?'
+        'Mohon maaf Kak, Monee belum bisa membaca nominalnya dengan jelas. Boleh disebutkan kembali keperluan dan nominalnya ya Kak? 😊'
       );
       return;
     }
@@ -606,22 +606,22 @@ export class BotGateway {
     if (hasMultipleItems) {
       const itemsList = (processed.items || []).map((it, idx) => `  ${idx + 1}. ${it.name}: Rp ${((it.price || 0) * (it.qty || 1)).toLocaleString('id-ID')}`).join('\n');
       summaryText =
-        `📋 *Draf Pencatatan Transaksi (${processed.items!.length} Item Terpisah):*\n` +
+        `📋 *Draf Pencatatan dari Monee (${processed.items!.length} Item Terpisah):*\n` +
         itemsList +
         `\n\n• *Total*: Rp ${processed.amount.toLocaleString('id-ID')}\n` +
         `• *Tanggal Transaksi*: ${dateDisplay}\n` +
         `• *Dompet*: ${targetWallet?.name || 'Utama'}\n` +
         `• *Kategori*: ${targetCategory?.name || 'Umum'}\n\n` +
-        `👉 *Balas "Ya" untuk menyetujui dan mencatat tiap item satu-per-satu ke jurnal, atau ketik koreksi Anda.*`;
+        `👉 *Balas "Ya" jika sudah sesuai ya Kak, atau ketik koreksi Anda.*`;
     } else {
       summaryText =
-        `📋 *Draf Pencatatan Ditemukan:*\n` +
+        `📋 *Draf Pencatatan dari Monee:*\n` +
         `• *Keperluan*: ${processed.description}\n` +
         `• *Total*: Rp ${processed.amount.toLocaleString('id-ID')}\n` +
         `• *Tanggal Transaksi*: ${dateDisplay}\n` +
         `• *Dompet*: ${targetWallet?.name || 'Utama'}\n` +
         `• *Kategori*: ${targetCategory?.name || 'Umum'}\n\n` +
-        `👉 *Balas "Ya" untuk menyetujui, atau ketik koreksi Anda.*`;
+        `👉 *Balas "Ya" jika sudah sesuai ya Kak, atau ketik koreksi Anda.*`;
     }
 
     const proposedPayload = {

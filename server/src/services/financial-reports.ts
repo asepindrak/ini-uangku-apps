@@ -13,7 +13,7 @@ export class FinancialReportsService {
     });
 
     if (wallets.length === 0) {
-      return '💳 Belum ada dompet yang terdaftar di keluarga Anda.';
+      return '💳 Belum ada dompet yang terdaftar di keluarga Kakak.';
     }
 
     let totalLiquid = 0;
@@ -27,7 +27,7 @@ export class FinancialReportsService {
     }
 
     return (
-      `💳 *Laporan Saldo Dompet Keluarga*\n\n` +
+      `💳 *Laporan Saldo Dompet Keluarga dari Monee*\n\n` +
       lines.join('\n') +
       `\n\n━━━━━━━━━━━━━━━━━━━━\n` +
       `💰 *Total Saldo Kas/Bank*: Rp ${totalLiquid.toLocaleString('id-ID')}`
@@ -56,7 +56,7 @@ export class FinancialReportsService {
     const todayDateLabel = TimezoneService.formatDate(new Date(), tz, { dateStyle: 'full' });
 
     if (transactions.length === 0) {
-      return `☀️ *Laporan Hari Ini (${todayDateLabel})*\n\nBelum ada pengeluaran atau pemasukan yang dicatat hari ini.`;
+      return `☀️ *Laporan Hari Ini (${todayDateLabel})*\n\nBelum ada pengeluaran atau pemasukan yang dicatat hari ini ya Kak. Semangat menjalani hari! 🎀`;
     }
 
     let totalExpense = 0;
@@ -76,7 +76,7 @@ export class FinancialReportsService {
     }
 
     return (
-      `☀️ *Laporan Hari Ini (${todayDateLabel})*\n\n` +
+      `☀️ *Laporan Hari Ini dari Monee (${todayDateLabel})*\n\n` +
       lines.join('\n') +
       `\n\n━━━━━━━━━━━━━━━━━━━━\n` +
       `🔴 *Total Pengeluaran*: Rp ${totalExpense.toLocaleString('id-ID')}\n` +
@@ -109,7 +109,7 @@ export class FinancialReportsService {
     const yesterdayLabel = TimezoneService.formatDate(bounds.startOfYesterday, tz, { dateStyle: 'full' });
 
     if (transactions.length === 0) {
-      return `📅 *Laporan Kemarin (${yesterdayLabel})*\n\nTidak ada catatan transaksi kemarin.`;
+      return `📅 *Laporan Kemarin (${yesterdayLabel})*\n\nTidak ada catatan transaksi kemarin ya Kak.`;
     }
 
     let totalExpense = 0;
@@ -129,7 +129,7 @@ export class FinancialReportsService {
     }
 
     return (
-      `📅 *Laporan Kemarin (${yesterdayLabel})*\n\n` +
+      `📅 *Laporan Kemarin dari Monee (${yesterdayLabel})*\n\n` +
       lines.join('\n') +
       `\n\n━━━━━━━━━━━━━━━━━━━━\n` +
       `🔴 *Total Pengeluaran Kemarin*: Rp ${totalExpense.toLocaleString('id-ID')}\n` +
@@ -199,7 +199,7 @@ export class FinancialReportsService {
       (budgetLines.length > 0
         ? `*Status Anggaran (Budget Guardrails):*\n${budgetLines.join('\n')}\n\n`
         : '') +
-      `_Tetap jaga disiplin finansial keluarga bersama Ini Uangku! 🎀_`
+      `_Monee siap bantu jaga disiplin finansial keluarga Kakak bersama Ini Uangku! 🎀_`
     );
   }
 
@@ -213,7 +213,7 @@ export class FinancialReportsService {
     });
 
     if (funds.length === 0) {
-      return '🎯 Belum ada Pos Dana Siaga (Sinking Fund) aktif di keluarga Anda.';
+      return '🎯 Belum ada Pos Dana Siaga (Sinking Fund) aktif di keluarga Kakak.';
     }
 
     const lines: string[] = [];
@@ -236,7 +236,7 @@ export class FinancialReportsService {
     }
 
     return (
-      `🎯 *Pos Dana Siaga & Tabungan Target (Sinking Funds)*\n\n` +
+      `🎯 *Pos Dana Siaga & Tabungan Target Keluarga Kakak*\n\n` +
       lines.join('\n\n')
     );
   }
@@ -251,7 +251,7 @@ export class FinancialReportsService {
     });
 
     if (bills.length === 0) {
-      return '📅 Belum ada jadwal tagihan rutin bulanan di keluarga Anda.';
+      return '📅 Belum ada jadwal tagihan rutin bulanan di keluarga Kakak.';
     }
 
     let totalBills = 0;
@@ -264,11 +264,11 @@ export class FinancialReportsService {
     }
 
     return (
-      `📅 *Jadwal Tagihan Rutin Bulanan*\n\n` +
+      `📅 *Jadwal Tagihan Rutin Bulanan Keluarga Kakak*\n\n` +
       lines.join('\n') +
       `\n\n━━━━━━━━━━━━━━━━━━━━\n` +
       `💰 *Total Beban Rutin*: Rp ${totalBills.toLocaleString('id-ID')}/bulan\n` +
-      `_Bot akan otomatis mengingatkan konfirmasi pada tgl jatuh tempo pukul 07:00 pagi._`
+      `_Monee akan otomatis mengingatkan konfirmasi pada tgl jatuh tempo pukul 07:00 pagi ya Kak._`
     );
   }
 
@@ -277,8 +277,9 @@ export class FinancialReportsService {
    */
   static getHelpMessage(botUsername?: string): string {
     return (
-      `🎀 *Panduan Asisten Finansial Ini Uangku*\n\n` +
-      `*Perintah Cepat (Command):*\n` +
+      `🎀 *Halo Kak! Kenalin, aku Monee*\n` +
+      `Monee adalah asisten dan konsultan keuangan cerdas untuk keluarga Kakak di aplikasi *Ini Uangku*.\n\n` +
+      `*Perintah Cepat ke Monee:*\n` +
       `• /saldo - Cek saldo seluruh dompet kas & bank\n` +
       `• /hariini - Rekap transaksi hari ini\n` +
       `• /kemarin - Rekap transaksi kemarin\n` +
@@ -286,16 +287,16 @@ export class FinancialReportsService {
       `• /sinkingfund - Cek progres tabungan dana siaga\n` +
       `• /tagihan - Cek jadwal tagihan rutin bulanan\n` +
       `• /help - Tampilkan panduan ini\n\n` +
-      `*Kemampuan AI Agent Lainnya:*\n` +
+      `*Kakak juga bisa langsung chat ke Monee:*\n` +
       `1. *Catat Belanja*: "Beli bakso 25rb bayar pake Gopay"\n` +
       `2. *Rincian Item*: "Beli beras 70rb, telur 25rb, minyak 35rb pake BCA"\n` +
       `3. *Kirim Foto*: Foto struk Indomaret atau coretan tangan di kertas\n` +
       `4. *Kirim Suara*: Kirim rekaman Voice Note pengeluaran\n` +
-      `5. *Buat Dompet*: "bikin dompet baru Bank Jago saldo 500rb"\n` +
+      `5. *Buat Dompet*: "Monee bikin dompet baru Bank Jago saldo 500rb"\n` +
       `6. *Transfer*: "transfer dari BCA ke Gopay 200rb"\n` +
       `7. *Atur Budget*: "atur budget makan 2 juta sebulan"\n` +
       `8. *Edit/Hapus Transaksi*: "ubah pengeluaran bensin kemarin jadi 60rb" atau "hapus transaksi bensin kemarin"\n` +
-      `9. *Tanya Konsultan*: "pengeluaran ada apa aja?", "apakah bulan ini boros?"`
+      `9. *Tanya Konsultan*: "pengeluaran ada apa aja Monee?", "menurut Monee bulan ini boros ga?"`
     );
   }
 }

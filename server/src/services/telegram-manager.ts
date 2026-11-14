@@ -330,17 +330,17 @@ export class TelegramManager {
     }
 
     await ctx.reply(
-      `Halo ${user.name || ctx.from?.first_name}! 🎀\n\n` +
-      `Selamat datang di Bot Finansial Keluarga *"${user.family.name}"*.\n\n` +
-      `*Perintah Cepat Tersedia:*\n` +
+      `Halo Kak ${user.name || ctx.from?.first_name}! 🎀\n\n` +
+      `Kenalin, aku *Monee*, asisten & konsultan keuangan cerdas untuk keluarga *"${user.family.name}"* siap bantu kelola keuangan Kakak!\n\n` +
+      `*Perintah Cepat ke Monee:*\n` +
       `• /saldo - Cek saldo seluruh dompet kas & bank\n` +
       `• /hariini - Rekap transaksi hari ini\n` +
       `• /kemarin - Rekap transaksi kemarin\n` +
       `• /bulanini - Rekap pengeluaran & budget bulan ini\n` +
       `• /sinkingfund - Cek pos tabungan dana siaga\n` +
-      `• /tagihan - Cek jadwal tagihan rutin\n` +
-      `• /help - Bantuan & panduan lengkap\n\n` +
-      `*Anda juga bisa langsung chat:* ketik belanjaan, kirim foto nota/struk belanja, atau kirim voice note!`,
+      `• /tagihan - Cek jadwal tagihan rutin bulanan\n` +
+      `• /help - Panduan lengkap dari Monee\n\n` +
+      `*Kakak juga bisa langsung chat ke Monee:* ketik belanjaan, kirim foto nota/struk belanja, kirim voice note, atau tanya saran keuangan!`,
       { parse_mode: 'Markdown' }
     );
   }
@@ -529,7 +529,7 @@ export class TelegramManager {
 
     // 4. Handle Foto (Struk / Catatan Kertas)
     if (ctx.message?.photo && ctx.message.photo.length > 0) {
-      await ctx.reply('🔍 Sedang membaca foto nota / tulisan tangan Anda dengan AI...');
+      await ctx.reply('🔍 Monee sedang membaca foto nota / tulisan tangan Kakak...');
       try {
         const photo = ctx.message.photo[ctx.message.photo.length - 1];
         const file = await ctx.api.getFile(photo.file_id);
@@ -546,7 +546,7 @@ export class TelegramManager {
 
     // 5. Handle Voice Note
     if (ctx.message?.voice) {
-      await ctx.reply('🎙️ Sedang mendengarkan pesan suara Anda...');
+      await ctx.reply('🎙️ Monee sedang mendengarkan pesan suara Kakak...');
       try {
         const file = await ctx.api.getFile(ctx.message.voice.file_id);
         if (file.file_path) {
@@ -796,7 +796,7 @@ export class TelegramManager {
 
     // 10. Jika berupa Pencatatan Transaksi Baru (CREATE_TRANSACTION)
     if (!processed.amount || processed.amount <= 0) {
-      await ctx.reply('Mohon maaf, nominal pengeluaran belum terbaca dengan jelas. Bisa disebutkan kembali keperluan dan nominalnya?');
+      await ctx.reply('Mohon maaf Kak, Monee belum bisa membaca nominalnya dengan jelas. Boleh disebutkan kembali keperluan dan nominalnya ya Kak? 😊');
       return;
     }
 
@@ -817,22 +817,22 @@ export class TelegramManager {
     if (hasMultipleItems) {
       const itemsList = (processed.items || []).map((it, idx) => `  ${idx + 1}. ${it.name}: Rp ${((it.price || 0) * (it.qty || 1)).toLocaleString('id-ID')}`).join('\n');
       summaryText =
-        `📋 *Draf Pencatatan Transaksi (${processed.items!.length} Item Terpisah):*\n` +
+        `📋 *Draf Pencatatan dari Monee (${processed.items!.length} Item Terpisah):*\n` +
         itemsList +
         `\n\n• *Total*: Rp ${processed.amount.toLocaleString('id-ID')}\n` +
         `• *Tanggal Transaksi*: ${dateDisplay}\n` +
         `• *Dompet*: ${targetWallet?.name || 'Utama'}\n` +
         `• *Kategori*: ${targetCategory?.name || 'Umum'}\n\n` +
-        `👉 *Ketuk tombol di bawah atau balas "Ya" untuk mencatat tiap item ke jurnal:*`;
+        `👉 *Ketuk tombol di bawah atau balas "Ya" jika sudah sesuai ya Kak:*`;
     } else {
       summaryText =
-        `📋 *Draf Pencatatan Ditemukan:*\n` +
+        `📋 *Draf Pencatatan dari Monee:*\n` +
         `• *Keperluan*: ${processed.description}\n` +
         `• *Total*: Rp ${processed.amount.toLocaleString('id-ID')}\n` +
         `• *Tanggal Transaksi*: ${dateDisplay}\n` +
         `• *Dompet*: ${targetWallet?.name || 'Utama'}\n` +
         `• *Kategori*: ${targetCategory?.name || 'Umum'}\n\n` +
-        `👉 *Ketuk tombol di bawah atau balas "Ya" untuk menyetujui:*`;
+        `👉 *Ketuk tombol di bawah atau balas "Ya" jika sudah sesuai ya Kak:*`;
     }
 
     const proposedPayload = {

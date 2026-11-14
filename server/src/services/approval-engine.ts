@@ -88,7 +88,7 @@ export class ApprovalEngine {
     if (!pending) {
       return {
         status: 'NO_PENDING',
-        message: 'Tidak ada draf transaksi yang sedang menunggu persetujuan Anda saat ini.',
+        message: 'Kakak tidak memiliki draf transaksi yang sedang menunggu persetujuan Monee saat ini. 🎀',
       };
     }
 
@@ -110,7 +110,7 @@ export class ApprovalEngine {
       });
       return {
         status: 'REJECTED',
-        message: '❌ Transaksi berhasil dibatalkan dan tidak dicatat ke pembukuan.',
+        message: '❌ Siap Kak, transaksi dibatalkan dan tidak Monee catat ke pembukuan. 🎀',
       };
     } else {
       // Input pengguna berupa koreksi teks
@@ -192,7 +192,7 @@ export class ApprovalEngine {
         const lines = itemRows.map((it) => `• ${it.name}: Rp ${it.total.toLocaleString('id-ID')}`);
         successMessage =
           `✅ *Pencatatan Berhasil Disetujui!*\n` +
-          `Telah dicatat ${itemRows.length} transaksi satu-per-satu ke jurnal:\n` +
+          `Monee sudah catat ${itemRows.length} transaksi satu-per-satu ke jurnal ya Kak:\n` +
           lines.slice(0, 10).join('\n') +
           (lines.length > 10 ? `\n...dan ${lines.length - 10} item lainnya` : '') +
           `\n\n• *Total*: Rp ${totalCalculated.toLocaleString('id-ID')}\n• *Dompet*: ${updatedWallet?.name || 'Utama'}\n• *Sisa Saldo*: ${formattedBalance}`;
@@ -234,7 +234,7 @@ export class ApprovalEngine {
         const updatedWallet = await prisma.wallet.findUnique({ where: { id: walletId } });
         const formattedBalance = updatedWallet ? `Rp ${Number(updatedWallet.balance).toLocaleString('id-ID')}` : '';
 
-        successMessage = `✅ *Pencatatan Berhasil Disetujui!*\n• Transaksi: ${description}\n• Nominal: Rp ${numAmount.toLocaleString('id-ID')}\n• Dompet: ${updatedWallet?.name || 'Utama'}\n• Sisa Saldo: ${formattedBalance}`;
+        successMessage = `✅ *Pencatatan Berhasil Disetujui!*\nMonee sudah catat ke jurnal ya Kak:\n• Transaksi: ${description}\n• Nominal: Rp ${numAmount.toLocaleString('id-ID')}\n• Dompet: ${updatedWallet?.name || 'Utama'}\n• Sisa Saldo: ${formattedBalance}`;
       }
     } else if (pending.actionType === ActionType.UPDATE_TRANSACTION) {
       const { targetTransactionId, targetDescription, newAmount, newDescription, newDate, newWalletId, newCategoryId } = payload;
@@ -312,6 +312,7 @@ export class ApprovalEngine {
 
       successMessage =
         `✏️ *Transaksi Berhasil Diperbarui!*\n` +
+        `Monee sudah perbarui datanya ya Kak:\n` +
         `• *Transaksi*: ${updatedDesc}\n` +
         `• *Nominal*: Rp ${updatedAmount.toLocaleString('id-ID')} (Sebelumnya: Rp ${oldAmount.toLocaleString('id-ID')})\n` +
         `• *Tanggal*: ${dateFormatted}\n` +
@@ -366,6 +367,7 @@ export class ApprovalEngine {
 
       successMessage =
         `🗑️ *Transaksi Berhasil Dihapus & Saldo Dipulihkan!*\n` +
+        `Monee sudah hapus transaksi ini dari pembukuan Kakak:\n` +
         `• *Transaksi Dihapus*: ${txRecord.description}\n` +
         `• *Nominal*: Rp ${txAmount.toLocaleString('id-ID')}\n` +
         `• *Dompet*: ${walletRestored?.name} (Saldo Sekarang: Rp ${Number(walletRestored?.balance || 0).toLocaleString('id-ID')})`;
@@ -384,6 +386,7 @@ export class ApprovalEngine {
 
       successMessage =
         `🎉 *Dompet Baru Berhasil Dibuat!*\n` +
+        `Monee sudah daftarkan dompet baru keluarga Kakak:\n` +
         `• *Nama Dompet*: ${newWallet.name}\n` +
         `• *Tipe*: ${newWallet.type}\n` +
         `• *Saldo Awal*: Rp ${Number(newWallet.balance).toLocaleString('id-ID')}`;
@@ -430,6 +433,7 @@ export class ApprovalEngine {
 
       successMessage =
         `💸 *Transfer Antar Dompet Berhasil!*\n` +
+        `Monee sudah sesuaikan saldo dompet Kakak:\n` +
         `• *Dari Dompet*: ${updatedSrc?.name} (Sisa: Rp ${Number(updatedSrc?.balance).toLocaleString('id-ID')})\n` +
         `• *Ke Dompet*: ${updatedTgt?.name} (Saldo: Rp ${Number(updatedTgt?.balance).toLocaleString('id-ID')})\n` +
         `• *Nominal*: Rp ${numAmount.toLocaleString('id-ID')}`;
@@ -460,6 +464,7 @@ export class ApprovalEngine {
 
       successMessage =
         `🎯 *Batas Anggaran (Budget) Berhasil Diatur!*\n` +
+        `Monee siap bantu pantau kuota anggaran ini ya Kak:\n` +
         `• *Kategori*: ${cat?.name}\n` +
         `• *Batas Bulanan*: Rp ${Number(cat?.monthlyBudget).toLocaleString('id-ID')}\n` +
         `• *Peringatan Otomatis*: Saat mencapai ${cat?.alertThreshold || 80}% kuota`;
@@ -480,6 +485,7 @@ export class ApprovalEngine {
 
       successMessage =
         `🎯 *Pos Dana Siaga (Sinking Fund) Baru Berhasil Dibuat!*\n` +
+        `Monee sudah aktifkan pos tabungan ini untuk keluarga Kakak:\n` +
         `• *Nama Pos*: ${fund.name}\n` +
         `• *Target Dana*: Rp ${Number(fund.targetAmount).toLocaleString('id-ID')}\n` +
         `• *Alokasi Tiap Bulan*: Rp ${Number(fund.monthlyAlloc).toLocaleString('id-ID')}`;
@@ -502,10 +508,11 @@ export class ApprovalEngine {
 
       successMessage =
         `📅 *Jadwal Tagihan Rutin Berhasil Disimpan!*\n` +
+        `Monee akan otomatis mengingatkan Kakak saat jatuh tempo tiba:\n` +
         `• *Tagihan*: ${bill.name}\n` +
         `• *Nominal*: Rp ${Number(bill.amount).toLocaleString('id-ID')}\n` +
         `• *Jatuh Tempo*: Tanggal ${bill.dueDayOfMonth} setiap bulan\n` +
-        `• *Notifikasi Otomatis*: AI akan mengingatkan pukul 07:00 pagi setiap jatuh tempo`;
+        `• *Notifikasi Otomatis*: Pukul 07:00 pagi setiap jatuh tempo`;
     } else if (pending.actionType === ActionType.EXECUTE_RECURRING_BILL) {
       const { billId, walletId, categoryId, amount, name } = payload;
       const numAmount = Number(amount);
@@ -628,7 +635,7 @@ export class ApprovalEngine {
       });
 
       const remaining = Math.max(0, monthlyBudget - totalSpent);
-      return `⚠️ *PERINGATAN ANGGARAN KELUARGA (GUARDRAIL ${thresholdPct}%)*\nPengeluaran untuk kategori *[${category.name}]* telah mencapai *${usagePct}%* dari plafon anggaran bulanan.\n• Terpakai: Rp ${totalSpent.toLocaleString('id-ID')} / Rp ${monthlyBudget.toLocaleString('id-ID')}\n• Sisa Kuota: Rp ${remaining.toLocaleString('id-ID')}`;
+      return `⚠️ *PERINGATAN ANGGARAN DARI MONEE (GUARDRAIL ${thresholdPct}%)*\nPengeluaran keluarga Kakak untuk kategori *[${category.name}]* sudah mencapai *${usagePct}%* dari plafon anggaran bulanan nih Kak.\n• Terpakai: Rp ${totalSpent.toLocaleString('id-ID')} / Rp ${monthlyBudget.toLocaleString('id-ID')}\n• Sisa Kuota: Rp ${remaining.toLocaleString('id-ID')}\n_Yuk lebih hemat lagi untuk pos ini ya Kak! 🎀_`;
     }
 
     return undefined;
