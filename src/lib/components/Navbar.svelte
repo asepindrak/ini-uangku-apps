@@ -11,6 +11,8 @@
     Bell,
     LogOut,
     UserPlus,
+    Users,
+    User,
     Settings,
     ShieldCheck,
   } from 'lucide-svelte';
@@ -20,6 +22,7 @@
   export let onOpenBotStatus: () => void;
   export let onOpenPending: () => void;
   export let onOpenLLMSettings: () => void;
+  export let onOpenProfile: () => void;
 
   function togglePrivacy() {
     privacyMode.update((v) => !v);
@@ -103,13 +106,14 @@
         <Bot class="w-4 h-4" />
       </button>
 
-      <!-- Invite Family Member Button -->
+      <!-- Kelola Keluarga & Daftar Anggota -->
       <button
         on:click={onOpenInvite}
-        class="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-gradient-to-r from-brand-sky-light to-brand-peach-light hover:from-brand-sky hover:to-brand-peach text-brand-indigo text-xs font-bold border border-white/80 shadow-xs transition"
+        class="inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-gradient-to-r from-brand-sky-light to-brand-peach-light hover:from-brand-sky hover:to-brand-peach text-brand-indigo text-xs font-bold border border-white/80 shadow-xs transition"
+        title="Daftar Anggota Keluarga & Undang Anggota"
       >
-        <UserPlus class="w-4 h-4" />
-        Undang Keluarga
+        <Users class="w-4 h-4" />
+        <span class="hidden sm:inline">Keluarga</span>
       </button>
 
       <!-- LLM Configuration -->
@@ -132,6 +136,17 @@
 
       <!-- User Profile & Logout -->
       {#if $auth.isAuthenticated}
+        <button
+          on:click={onOpenProfile}
+          class="inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-white/80 hover:bg-white border border-white/70 text-brand-indigo text-xs font-bold transition shadow-xs"
+          title="Edit Profil & Nomor HP Saya"
+        >
+          <div class="w-5 h-5 rounded-full bg-brand-peach text-brand-indigo text-[10px] font-extrabold flex items-center justify-center">
+            {$auth.user?.name ? $auth.user.name.substring(0, 1).toUpperCase() : 'U'}
+          </div>
+          <span class="hidden md:inline max-w-[100px] truncate">{$auth.user?.name}</span>
+        </button>
+
         <button
           on:click={clearAuth}
           class="p-2.5 rounded-2xl bg-red-50/80 hover:bg-red-100/90 border border-red-200/50 text-red-600 transition shadow-xs"

@@ -12,6 +12,7 @@
   import InviteFamilyModal from './lib/components/InviteFamilyModal.svelte';
   import BotStatusModal from './lib/components/BotStatusModal.svelte';
   import LLMSettingsModal from './lib/components/LLMSettingsModal.svelte';
+  import EditProfileModal from './lib/components/EditProfileModal.svelte';
   import UpdateModal from './lib/components/UpdateModal.svelte';
   import AuthModal from './lib/components/AuthModal.svelte';
 
@@ -26,6 +27,7 @@
   let isInviteOpen = false;
   let isBotStatusOpen = false;
   let isLLMSettingsOpen = false;
+  let isProfileOpen = false;
 
   onMount(async () => {
     if ($auth.isAuthenticated) {
@@ -97,6 +99,7 @@
       onOpenBotStatus={() => (isBotStatusOpen = true)}
       onOpenPending={() => (isPendingOpen = true)}
       onOpenLLMSettings={() => (isLLMSettingsOpen = true)}
+      onOpenProfile={() => (isProfileOpen = true)}
     />
 
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 w-full space-y-8 flex-1">
@@ -148,6 +151,11 @@
     <LLMSettingsModal
       isOpen={isLLMSettingsOpen}
       onClose={() => (isLLMSettingsOpen = false)}
+    />
+
+    <EditProfileModal
+      isOpen={isProfileOpen}
+      onClose={() => (isProfileOpen = false)}
     />
 
     <UpdateModal />

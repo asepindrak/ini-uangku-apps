@@ -33,6 +33,17 @@ export function setAuth(token: string, user: User, family: Family) {
   }
 }
 
+export function updateAuthUser(partialUser: any) {
+  auth.update((state) => {
+    if (!state.user) return state;
+    const updated = { ...state.user, ...partialUser };
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('iniuangku_user', JSON.stringify(updated));
+    }
+    return { ...state, user: updated };
+  });
+}
+
 export function clearAuth() {
   auth.set({
     token: null,

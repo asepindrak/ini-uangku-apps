@@ -2,13 +2,16 @@
   import { onMount } from 'svelte';
   import qrcode from 'qrcode';
   import { api } from '../api';
-  import { X, Copy, Check, Share2, QrCode, UserPlus, Phone, Send, Clock, Globe, Sparkles } from 'lucide-svelte';
+  import { auth } from '../stores/auth';
+  import { X, Copy, Check, Share2, QrCode, UserPlus, Phone, Send, Clock, Globe, Sparkles, Users, Trash2 } from 'lucide-svelte';
 
   export let isOpen: boolean = false;
   export let onClose: () => void;
   export let onMemberAdded: () => void;
 
-  let activeTab: 'invite' | 'direct' | 'timezone' = 'invite';
+  let activeTab: 'members' | 'invite' | 'direct' | 'timezone' = 'members';
+  let members: any[] = [];
+  let loadingMembers = false;
   let inviteCode = '';
   let inviteUrl = '';
   let familyName = '';
@@ -58,11 +61,37 @@
   ];
 
   onMount(async () => {
-    await loadInvite();
+    await Promise.all([loadInvite(), loadMembers()]);
   });
 
   $: if (isOpen) {
     loadInvite();
+    loadMembers();
+  }
+
+  async function loadMembers() {
+    loadingMembers = true;
+    try {
+      members = await api.getMembers();
+    } catch (e) {
+      console.error('Failed to load family members:', e);
+    } finally {
+      loadingMembers = false;
+    }
+  }
+
+  async function handleDeleteMember(member: any) {
+    if (!confirm(`Hapus ${member.name} dari keluarga? Anggota ini tidak akan bisa lagi mengakses data atau mencatat via bot.`)) {
+      return;
+    }
+
+    try {
+      await api.deleteMember(member.id);
+      await loadMembers();
+      onMemberAdded();
+    } catch (err: any) {
+      alert(err.message || 'Gagal menghapus anggota.');
+    }
   }
 
   async function loadInvite() {
@@ -170,6 +199,7 @@
       memberName = '';
       whatsappNumber = '';
       telegramChatId = '';
+      await loadMembers();
       onMemberAdded();
       setTimeout(() => (successMsg = ''), 3000);
     } catch (err: any) {
@@ -187,10 +217,10 @@
       <div class="p-6 pb-4 bg-gradient-to-r from-brand-sky-light via-brand-peach-light to-brand-butter-light border-b border-white/40 flex items-center justify-between">
         <div class="flex items-center gap-2.5">
           <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-brand-sky to-brand-peach flex items-center justify-center text-brand-indigo shadow-xs">
-            <UserPlus class="w-5 h-5" />
+            <Users class="w-5 h-5" />
           </div>
           <div>
-            <h3 class="text-base font-bold text-brand-indigo">Undang Anggota Keluarga 🎀</h3>
+            <h3 class="text-base font-bold text-brand-indigo">Kelola Keluarga & Anggota 🎀</h3>
             <p class="text-xs text-brand-indigo/60">{familyName || 'Keluarga Ini Uangku'}</p>
           </div>
         </div>
@@ -200,24 +230,31 @@
       </div>
 
       <!-- Tab Selection -->
-      <div class="flex border-b border-white/60 bg-white/40 px-6 pt-3 gap-2">
+      <div class="flex border-b border-white/60 bg-white/40 px-6 pt-3 gap-2 overflow-x-auto">
+        <button
+          on:click={() => (activeTab = 'members')}
+          class="pb-2.5 text-xs font-bold transition border-b-2 flex items-center gap-1.5 shrink-0 {activeTab === 'members' ? 'border-brand-peach-dark text-brand-indigo' : 'border-transparent text-brand-indigo/50 hover:text-brand-indigo'}"
+        >
+          <Users class="w-4 h-4" />
+          Daftar Anggota ({members.length})
+        </button>
         <button
           on:click={() => (activeTab = 'invite')}
-          class="pb-2.5 text-xs font-bold transition border-b-2 flex items-center gap-1.5 {activeTab === 'invite' ? 'border-brand-peach-dark text-brand-indigo' : 'border-transparent text-brand-indigo/50 hover:text-brand-indigo'}"
+          class="pb-2.5 text-xs font-bold transition border-b-2 flex items-center gap-1.5 shrink-0 {activeTab === 'invite' ? 'border-brand-peach-dark text-brand-indigo' : 'border-transparent text-brand-indigo/50 hover:text-brand-indigo'}"
         >
           <QrCode class="w-4 h-4" />
-          Bagikan QR & Link
+          Bagikan Link & QR
         </button>
         <button
           on:click={() => (activeTab = 'direct')}
-          class="pb-2.5 text-xs font-bold transition border-b-2 flex items-center gap-1.5 {activeTab === 'direct' ? 'border-brand-peach-dark text-brand-indigo' : 'border-transparent text-brand-indigo/50 hover:text-brand-indigo'}"
+          class="pb-2.5 text-xs font-bold transition border-b-2 flex items-center gap-1.5 shrink-0 {activeTab === 'direct' ? 'border-brand-peach-dark text-brand-indigo' : 'border-transparent text-brand-indigo/50 hover:text-brand-indigo'}"
         >
           <Phone class="w-4 h-4" />
-          Input No WA & Telegram
+          Input No WA
         </button>
         <button
           on:click={() => (activeTab = 'timezone')}
-          class="pb-2.5 text-xs font-bold transition border-b-2 flex items-center gap-1.5 {activeTab === 'timezone' ? 'border-brand-peach-dark text-brand-indigo' : 'border-transparent text-brand-indigo/50 hover:text-brand-indigo'}"
+          class="pb-2.5 text-xs font-bold transition border-b-2 flex items-center gap-1.5 shrink-0 {activeTab === 'timezone' ? 'border-brand-peach-dark text-brand-indigo' : 'border-transparent text-brand-indigo/50 hover:text-brand-indigo'}"
         >
           <Clock class="w-4 h-4" />
           Zona Waktu
@@ -225,7 +262,76 @@
       </div>
 
       <div class="p-6 max-h-[65vh] overflow-y-auto">
-        {#if activeTab === 'invite'}
+        {#if activeTab === 'members'}
+          <div class="space-y-4">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-brand-indigo/70">Daftar Anggota Keluarga ({members.length})</span>
+              <button
+                type="button"
+                on:click={() => (activeTab = 'invite')}
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-brand-sky/20 hover:bg-brand-sky/30 text-brand-indigo text-xs font-bold transition"
+              >
+                <UserPlus class="w-3.5 h-3.5" />
+                Tambah Anggota
+              </button>
+            </div>
+
+            {#if loadingMembers}
+              <div class="py-8 text-center text-xs text-brand-indigo/60">Memuat anggota keluarga...</div>
+            {:else if members.length === 0}
+              <div class="py-8 text-center text-xs text-brand-indigo/60">Belum ada anggota keluarga.</div>
+            {:else}
+              <div class="space-y-2.5">
+                {#each members as m}
+                  <div class="p-3.5 rounded-2xl bg-white border border-brand-indigo/10 shadow-xs flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-3 min-w-0">
+                      <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-brand-sky via-brand-peach to-brand-butter flex items-center justify-center font-bold text-brand-indigo text-xs shrink-0 shadow-xs">
+                        {m.name ? m.name.substring(0, 2).toUpperCase() : 'US'}
+                      </div>
+                      <div class="min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                          <span class="text-xs font-extrabold text-brand-indigo truncate">{m.name}</span>
+                          {#if m.role === 'MANAGER'}
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-brand-peach text-brand-indigo shadow-xs">👑 Manager</span>
+                          {:else}
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-brand-sky text-brand-indigo shadow-xs">👤 Anggota</span>
+                          {/if}
+                        </div>
+                        <div class="flex items-center gap-3 mt-1 text-[11px] text-brand-indigo/60 flex-wrap">
+                          {#if m.whatsappNumber}
+                            <span class="flex items-center gap-1 text-emerald-700 font-mono font-medium">
+                              <Phone class="w-3 h-3 text-emerald-600" />
+                              {m.countryCode || '+62'} {m.whatsappNumber}
+                            </span>
+                          {:else}
+                            <span class="text-brand-indigo/40 italic">Belum ada no WA</span>
+                          {/if}
+                          {#if m.telegramChatId}
+                            <span class="flex items-center gap-1 text-sky-700 font-mono font-medium">
+                              <Send class="w-3 h-3 text-sky-500" />
+                              ID: {m.telegramChatId}
+                            </span>
+                          {/if}
+                        </div>
+                      </div>
+                    </div>
+
+                    {#if $auth.user?.role === 'MANAGER' && m.id !== $auth.user?.id}
+                      <button
+                        type="button"
+                        on:click={() => handleDeleteMember(m)}
+                        class="p-2 rounded-xl text-red-400 hover:text-red-600 hover:bg-red-50 transition shrink-0"
+                        title="Hapus Anggota Keluarga"
+                      >
+                        <Trash2 class="w-4 h-4" />
+                      </button>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        {:else if activeTab === 'invite'}
           <div class="text-center space-y-4">
             <p class="text-xs text-brand-indigo/70">
               Scan QR Code ini dari kamera ponsel atau bagikan tautan ini ke pasangan / anak agar langsung terhubung.

@@ -154,4 +154,111 @@ export async function authRoutes(fastify: FastifyInstance) {
     });
     return user;
   });
+
+  // Edit Profile User Sendiri (Ganti No HP / WhatsApp, Telegram ID, dan Nama)
+  fastify.patch('/me', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    const { userId, familyId } = (request as any).user;
+    const { name, countryCode = '+62', whatsappNumber, telegramChatId } = request.body as any;
+
+    const currentUser = await prisma.user.findUnique({ where: { id: userId } });
+    if (!currentUser) {
+      return reply.status(404).send({ error: 'User tidak ditemukan.' });
+    }
+
+    const cleanPhone = (whatsappNumber || '').replace(/[^0-9]/g, '').replace(/^0+/, '');
+    const cleanCountry = (countryCode || '+62').replace('+', '');
+    const fullJid = cleanPhone ? `${cleanCountry}${cleanPhone}@s.whatsapp.net` : null;
+
+    // Cek apakah nomor WA sudah digunakan oleh akun lain
+    if (fullJid) {
+      const existing = await prisma.user.findFirst({
+        where: {
+          whatsappJid: fullJid,
+          id: { not: userId },
+        },
+      });
+      if (existing) {
+        return reply.status(400).send({ error: 'Nomor WhatsApp ini sudah terdaftar pada pengguna lain.' });
+      }
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(name ? { name: name.trim() } : {}),
+        countryCode: countryCode || '+62',
+        whatsappNumber: cleanPhone || null,
+        whatsappJid: fullJid,
+        telegramChatId: telegramChatId ? String(telegramChatId).trim() : null,
+      },
+      include: { family: true },
+    });
+
+    // Sinkronisasi otomatis ke tabel BotWhitelist
+    // 1. WhatsApp Whitelist
+    if (currentUser.whatsappJid && currentUser.whatsappJid !== fullJid) {
+      await prisma.botWhitelist.deleteMany({
+        where: { familyId, platform: 'WHATSAPP', identifier: currentUser.whatsappJid },
+      });
+    }
+    if (fullJid) {
+      await prisma.botWhitelist.upsert({
+        where: {
+          familyId_platform_identifier: {
+            familyId,
+            platform: 'WHATSAPP',
+            identifier: fullJid,
+          },
+        },
+        create: {
+          familyId,
+          platform: 'WHATSAPP',
+          identifier: fullJid,
+          name: updatedUser.name,
+        },
+        update: { name: updatedUser.name },
+      });
+    }
+
+    // 2. Telegram Whitelist
+    const cleanTg = telegramChatId ? String(telegramChatId).trim() : null;
+    if (currentUser.telegramChatId && currentUser.telegramChatId !== cleanTg) {
+      await prisma.botWhitelist.deleteMany({
+        where: { familyId, platform: 'TELEGRAM', identifier: currentUser.telegramChatId },
+      });
+    }
+    if (cleanTg) {
+      await prisma.botWhitelist.upsert({
+        where: {
+          familyId_platform_identifier: {
+            familyId,
+            platform: 'TELEGRAM',
+            identifier: cleanTg,
+          },
+        },
+        create: {
+          familyId,
+          platform: 'TELEGRAM',
+          identifier: cleanTg,
+          name: updatedUser.name,
+        },
+        update: { name: updatedUser.name },
+      });
+    }
+
+    return {
+      success: true,
+      user: {
+        id: updatedUser.id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        countryCode: updatedUser.countryCode,
+        whatsappNumber: updatedUser.whatsappNumber,
+        whatsappJid: updatedUser.whatsappJid,
+        telegramChatId: updatedUser.telegramChatId,
+      },
+      message: 'Profil dan nomor HP Anda berhasil diperbarui! Bot akan merespons nomor baru Anda.',
+    };
+  });
 }

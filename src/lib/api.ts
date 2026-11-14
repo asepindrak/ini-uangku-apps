@@ -46,6 +46,7 @@ export const api = {
   register: (data: any) => request<any>('/api/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   login: (data: any) => request<any>('/api/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   getProfile: () => request<any>('/api/auth/me'),
+  updateMyProfile: (data: any) => request<any>('/api/auth/me', { method: 'PATCH', body: JSON.stringify(data) }),
 
   // Family
   getMembers: () => request<any[]>('/api/family/members'),
