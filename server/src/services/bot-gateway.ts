@@ -17,17 +17,14 @@ import { ActionType, InputSource, TransactionType } from '@prisma/client';
 
 export class BotGateway {
   private static waSock: any = null;
-  private static telegramBot: Bot | null = null;
   public static latestWaQrCode: string | null = null;
   public static isWaConnected: boolean = false;
-  public static isTelegramConnected: boolean = false;
 
   /**
-   * Inisialisasi Gateway WhatsApp (Baileys) dan Telegram
+   * Inisialisasi Gateway WhatsApp (Baileys)
    */
   static async init() {
     await this.initWhatsApp();
-    await this.initTelegram();
   }
 
   /**
@@ -93,57 +90,6 @@ export class BotGateway {
         await this.handleIncomingWhatsAppMessage(msg);
       }
     });
-  }
-
-  /**
-   * Inisialisasi Telegram Bot via grammY
-   */
-  static async initTelegram() {
-    const token = process.env.TELEGRAM_BOT_TOKEN;
-    if (!token) {
-      console.log('ℹ️ TELEGRAM_BOT_TOKEN belum diisi di .env. Telegram bot dilewati.');
-      return;
-    }
-
-    try {
-      const bot = new Bot(token);
-      this.telegramBot = bot;
-
-      bot.command('start', async (ctx) => {
-        const chatId = String(ctx.from?.id);
-        const user = await prisma.user.findFirst({
-          where: { telegramChatId: chatId },
-        });
-
-        if (!user) {
-          await ctx.reply(
-            `Halo! ID Telegram Anda adalah: \`${chatId}\`\nNomor ini belum terdaftar di whitelist keluarga. Berikan ID ini kepada Manager keluarga Anda untuk ditambahkan ke aplikasi.`,
-            { parse_mode: 'Markdown' }
-          );
-          return;
-        }
-
-        await ctx.reply(`Halo ${user.name}! 🎀\nBot Finansial Keluarga "Ini Uangku" siap membantu mencatat pengeluaran Anda.`);
-      });
-
-      bot.on('message:text', async (ctx) => {
-        await this.handleIncomingTelegramMessage(ctx);
-      });
-
-      bot.on('message:photo', async (ctx) => {
-        await this.handleIncomingTelegramMessage(ctx);
-      });
-
-      bot.on('message:voice', async (ctx) => {
-        await this.handleIncomingTelegramMessage(ctx);
-      });
-
-      bot.start();
-      this.isTelegramConnected = true;
-      console.log('✅ Telegram Bot siap melayani keluarga!');
-    } catch (err) {
-      console.error('❌ Gagal menjalankan Telegram Bot:', err);
-    }
   }
 
   /**
@@ -300,81 +246,6 @@ export class BotGateway {
   }
 
   /**
-   * Pemrosesan Pesan Masuk Telegram
-   */
-  private static async handleIncomingTelegramMessage(ctx: any) {
-    const chatId = String(ctx.from?.id);
-    const user = await prisma.user.findFirst({
-      where: { telegramChatId: chatId },
-      include: { family: true },
-    });
-
-    if (!user) return; // Silent drop jika bukan whitelist
-
-    const familyId = user.familyId;
-    const textContent = ctx.message?.text || ctx.message?.caption || '';
-
-    // Cek persetujuan aktif
-    const activePending = await ApprovalEngine.getActivePendingAction(user.id);
-    if (activePending && textContent) {
-      const response = await ApprovalEngine.processResponse(user.id, textContent);
-      if (response.status === 'APPROVED' || response.status === 'REJECTED') {
-        let replyMsg = response.message;
-        if (response.alert) replyMsg += `\n\n${response.alert}`;
-        await ctx.reply(replyMsg);
-        return;
-      }
-    }
-
-    // Ambil context Dompet & Kategori keluarga
-    const wallets = await prisma.wallet.findMany({
-      where: { familyId },
-      select: { id: true, name: true, type: true },
-    });
-    const categories = await prisma.category.findMany({
-      where: { familyId },
-      select: { id: true, name: true },
-    });
-
-    const extracted = await LLMProviderService.extractTransaction({
-      familyId,
-      rawText: textContent,
-      contextWallets: wallets,
-      contextCategories: categories,
-    });
-
-    if (extracted.amount <= 0) {
-      await ctx.reply('Mohon maaf, nominal pengeluaran belum terbaca jelas. Mohon sebutkan nominal belanjanya.');
-      return;
-    }
-
-    const proposedPayload = {
-      walletId: extracted.walletId,
-      categoryId: extracted.categoryId,
-      amount: extracted.amount,
-      description: extracted.description,
-      type: extracted.type === 'INCOME' ? TransactionType.INCOME : TransactionType.EXPENSE,
-      inputSource: InputSource.TELEGRAM_TEXT,
-      items: extracted.items,
-    };
-
-    const targetWallet = wallets.find((w) => w.id === extracted.walletId);
-    const targetCategory = categories.find((c) => c.id === extracted.categoryId);
-
-    const summaryText = `📋 *Draf Pencatatan Ditemukan:*\n• *Keperluan*: ${extracted.description}\n• *Total*: Rp ${extracted.amount.toLocaleString('id-ID')}\n• *Dompet*: ${targetWallet?.name || 'Utama'}\n• *Kategori*: ${targetCategory?.name || 'Umum'}\n\n👉 *Balas "Ya" untuk menyetujui, atau ketik koreksi Anda.*`;
-
-    await ApprovalEngine.createPendingAction(
-      familyId,
-      user.id,
-      ActionType.CREATE_TRANSACTION,
-      proposedPayload,
-      summaryText
-    );
-
-    await ctx.reply(summaryText, { parse_mode: 'Markdown' });
-  }
-
-  /**
    * Kirim pesan teks WhatsApp ke nomor tertentu
    */
   static async sendWhatsAppMessage(jid: string, text: string) {
@@ -386,18 +257,6 @@ export class BotGateway {
       await this.waSock.sendMessage(jid, { text });
     } catch (err) {
       console.error('Error sending WhatsApp message:', err);
-    }
-  }
-
-  /**
-   * Kirim pesan teks Telegram ke chatId tertentu
-   */
-  static async sendTelegramMessage(chatId: string, text: string) {
-    if (!this.telegramBot) return;
-    try {
-      await this.telegramBot.api.sendMessage(chatId, text, { parse_mode: 'Markdown' });
-    } catch (err) {
-      console.error('Error sending Telegram message:', err);
     }
   }
 

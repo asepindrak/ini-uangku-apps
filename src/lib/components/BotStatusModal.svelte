@@ -16,23 +16,29 @@
     KeyRound,
     UserCheck,
     ExternalLink,
-    HelpCircle
+    HelpCircle,
+    ChevronDown,
+    ChevronUp
   } from 'lucide-svelte';
 
   export let isOpen: boolean = false;
   export let onClose: () => void;
 
-  let activeTab: 'whatsapp' | 'telegram' = 'telegram';
+  let activeTab: 'telegram' | 'whatsapp' = 'telegram';
 
   let status: BotStatus = {
     whatsappConnected: false,
     whatsappQr: undefined,
     telegramConnected: false,
+    globalTelegramBotRunning: false,
+    globalTelegramBotUsername: null,
     whitelistCount: 0,
   };
 
   // Telegram Config State
   let telegramConfig: TelegramConfigResponse = {
+    globalBotRunning: false,
+    globalBotUsername: null,
     configured: false,
     token: '',
     username: null,
@@ -44,6 +50,7 @@
   let botTokenInput = '';
   let newUserId = '';
   let newUserName = '';
+  let showAdvancedBotToken = false;
 
   let loadingWa = false;
   let savingTelegram = false;
@@ -136,14 +143,14 @@
   }
 
   async function handleStopTelegramBot() {
-    if (!confirm('Apakah Anda yakin ingin menonaktifkan bot Telegram keluarga ini?')) return;
+    if (!confirm('Apakah Anda yakin ingin menonaktifkan bot Telegram mandiri keluarga ini?')) return;
 
     savingTelegram = true;
     telegramMessage = null;
     try {
       await api.deleteTelegramConfig();
       botTokenInput = '';
-      telegramMessage = { text: 'Bot Telegram berhasil dinonaktifkan.', type: 'success' };
+      telegramMessage = { text: 'Bot Telegram mandiri dinonaktifkan. Sistem kembali menggunakan Bot Global.', type: 'success' };
       await loadTelegramConfig();
       await loadStatus();
     } catch (e: any) {
@@ -187,6 +194,8 @@
       alert(e.message || 'Gagal menghapus User ID.');
     }
   }
+
+  $: displayBotUsername = telegramConfig.username || telegramConfig.globalBotUsername || 'MoneeAiBot';
 </script>
 
 {#if isOpen}
@@ -201,7 +210,7 @@
           </div>
           <div>
             <h3 class="text-base font-bold text-brand-indigo">Bot AI & Multi-Platform Asisten</h3>
-            <p class="text-xs text-brand-indigo/60">WhatsApp Gateway & Telegram Mandiri Tiap Keluarga</p>
+            <p class="text-xs text-brand-indigo/60">Telegram & WhatsApp Gateway Keuangan Keluarga</p>
           </div>
         </div>
         <button on:click={onClose} class="p-2 rounded-full hover:bg-white/60 text-brand-indigo/60 hover:text-brand-indigo transition">
@@ -219,8 +228,8 @@
             : 'border-transparent text-brand-indigo/50 hover:text-brand-indigo hover:bg-white/40'}"
         >
           <Send class="w-3.5 h-3.5 text-sky-600" />
-          Bot Telegram Keluarga
-          {#if telegramConfig.isRunning}
+          Bot Telegram
+          {#if telegramConfig.isRunning || telegramConfig.globalBotRunning}
             <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
           {/if}
         </button>
@@ -244,95 +253,46 @@
 
         <!-- ================= TELEGRAM TAB ================= -->
         {#if activeTab === 'telegram'}
-          <!-- Whitelist Info Banner -->
-          <div class="p-3.5 rounded-2xl bg-brand-sky-light/80 border border-brand-sky/40 flex items-start gap-2.5 text-xs text-brand-indigo">
-            <ShieldCheck class="w-5 h-5 text-brand-sky-dark flex-shrink-0 mt-0.5" />
-            <div>
-              <span class="font-bold">Multi-Tenant & Keamanan Terisolasi:</span>
-              <p class="text-brand-indigo/70 mt-0.5">
-                Setiap keluarga memiliki token bot Telegram sendiri. Bot hanya melayani pesan dari daftar <b>User ID Telegram</b> yang Anda whitelist di bawah.
-              </p>
-            </div>
-          </div>
-
-          <!-- Token Configuration Card -->
-          <div class="p-4 rounded-3xl bg-white/80 border border-white/90 shadow-sm space-y-3">
+          <!-- Hero Card: Bot Telegram Global -->
+          <div class="p-4 rounded-3xl bg-gradient-to-br from-white/95 to-brand-sky-light/50 border border-brand-sky/30 shadow-xs space-y-3">
             <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <div class="w-8 h-8 rounded-xl bg-sky-100 flex items-center justify-center text-sky-600">
-                  <KeyRound class="w-4 h-4" />
+              <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-2xl bg-sky-500 text-white flex items-center justify-center shadow-xs">
+                  <Send class="w-4 h-4 ml-0.5" />
                 </div>
                 <div>
-                  <h4 class="text-xs font-bold text-brand-indigo">Token Bot Telegram</h4>
-                  <p class="text-[11px] text-brand-indigo/60">Dari @BotFather</p>
+                  <h4 class="text-xs font-bold text-brand-indigo">Bot Telegram Resmi</h4>
+                  <p class="text-[11px] text-brand-indigo/60">@{displayBotUsername}</p>
                 </div>
               </div>
 
-              {#if telegramConfig.isRunning}
-                <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
-                  <CheckCircle2 class="w-3.5 h-3.5" />
-                  @{telegramConfig.username || 'Bot Aktif'}
-                </span>
-              {:else if telegramConfig.configured}
-                <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700">
-                  <AlertCircle class="w-3.5 h-3.5" /> Terhenti
-                </span>
-              {:else}
-                <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-600">
-                  Belum Diatur
-                </span>
-              {/if}
-            </div>
-
-            <!-- Token Input -->
-            <div class="space-y-1.5">
-              <input
-                type="text"
-                bind:value={botTokenInput}
-                placeholder="Contoh: 7123456789:AAHk..."
-                class="w-full px-3.5 py-2.5 rounded-2xl bg-white/70 border border-brand-indigo/15 text-xs text-brand-indigo focus:outline-hidden focus:ring-2 focus:ring-brand-sky"
-              />
-              <div class="flex items-center justify-between text-[11px] text-brand-indigo/60 px-1">
-                <span>Dapatkan token gratis via <b>@BotFather</b> di Telegram.</span>
-                <a
-                  href="https://t.me/BotFather"
-                  target="_blank"
-                  rel="noreferrer"
-                  class="inline-flex items-center gap-1 text-sky-600 hover:underline font-semibold"
-                >
-                  Buka BotFather <ExternalLink class="w-3 h-3" />
-                </a>
+              <div class="flex items-center gap-2">
+                {#if telegramConfig.isRunning || telegramConfig.globalBotRunning}
+                  <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
+                    <CheckCircle2 class="w-3.5 h-3.5" /> Online 24/7
+                  </span>
+                {:else}
+                  <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-600">
+                    Menghubungkan...
+                  </span>
+                {/if}
               </div>
             </div>
 
-            {#if telegramMessage}
-              <div class="p-2.5 rounded-xl text-xs font-medium {telegramMessage.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}">
-                {telegramMessage.text}
-              </div>
-            {/if}
+            <p class="text-xs text-brand-indigo/70 leading-relaxed">
+              Seluruh anggota keluarga Anda dapat menggunakan bot ini untuk mencatat pengeluaran, foto struk, dan voice note. Bot <b>otomatis mengenali keluarga Anda</b> berdasarkan User ID yang didaftarkan di bawah ini.
+            </p>
 
-            <div class="flex items-center gap-2 pt-1">
-              <button
-                type="button"
-                on:click={handleSaveTelegramBot}
-                disabled={savingTelegram}
-                class="flex-1 py-2.5 rounded-2xl bg-gradient-to-r from-brand-sky-dark to-brand-indigo text-white text-xs font-bold shadow-xs hover:opacity-95 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
-              >
-                <RefreshCw class="w-3.5 h-3.5 {savingTelegram ? 'animate-spin' : ''}" />
-                {telegramConfig.configured ? 'Perbarui & Aktifkan Bot' : 'Simpan & Aktifkan Bot'}
-              </button>
-
-              {#if telegramConfig.configured}
-                <button
-                  type="button"
-                  on:click={handleStopTelegramBot}
-                  disabled={savingTelegram}
-                  class="px-3.5 py-2.5 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold border border-rose-200 transition"
-                >
-                  Hentikan
-                </button>
-              {/if}
-            </div>
+            <a
+              href="https://t.me/{displayBotUsername}"
+              target="_blank"
+              rel="noreferrer"
+              class="w-full py-2.5 rounded-2xl bg-sky-500 hover:bg-sky-600 text-white text-xs font-bold shadow-xs flex items-center justify-center gap-2 transition"
+            >
+              <Send class="w-3.5 h-3.5" />
+              Buka @{displayBotUsername} di Telegram
+              <ExternalLink class="w-3 h-3 opacity-80" />
+            </a>
           </div>
 
           <!-- Multiple User ID Whitelist Card -->
@@ -343,15 +303,15 @@
                   <UserCheck class="w-4 h-4" />
                 </div>
                 <div>
-                  <h4 class="text-xs font-bold text-brand-indigo">Daftar User ID Telegram Terdaftar</h4>
-                  <p class="text-[11px] text-brand-indigo/60">Whitelist pengirim yang diizinkan berinteraksi</p>
+                  <h4 class="text-xs font-bold text-brand-indigo">Whitelist Anggota Keluarga</h4>
+                  <p class="text-[11px] text-brand-indigo/60">Daftar User ID Telegram yang diizinkan mengelola keuangan</p>
                 </div>
               </div>
             </div>
 
             <!-- Form Tambah User ID -->
             <div class="p-3 bg-brand-sky-light/40 rounded-2xl border border-brand-sky/20 space-y-2">
-              <span class="text-[11px] font-bold text-brand-indigo block">+ Tambah User ID Telegram Baru</span>
+              <span class="text-[11px] font-bold text-brand-indigo block">+ Tambah User ID Anggota</span>
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <input
                   type="text"
@@ -362,14 +322,14 @@
                 <input
                   type="text"
                   bind:value={newUserName}
-                  placeholder="Nama Anggota (e.g. Ayah / Bunda)"
+                  placeholder="Nama Anggota (e.g. Ayah / Bunda / Anak)"
                   class="px-3 py-2 rounded-xl bg-white border border-brand-indigo/15 text-xs text-brand-indigo focus:outline-hidden focus:ring-1 focus:ring-brand-sky"
                 />
               </div>
               <div class="flex items-center justify-between pt-1">
                 <p class="text-[10px] text-brand-indigo/60 flex items-center gap-1">
                   <HelpCircle class="w-3 h-3 text-brand-indigo/40" />
-                  Kirim <code class="bg-white/80 px-1 rounded">/start</code> ke bot untuk melihat User ID Telegram Anda.
+                  Ketik <code class="bg-white/80 px-1 rounded">/start</code> di bot untuk melihat User ID.
                 </p>
                 <button
                   type="button"
@@ -387,7 +347,7 @@
             <div class="space-y-2">
               {#if telegramConfig.memberUsers.length === 0 && telegramConfig.whitelists.length === 0}
                 <div class="p-4 text-center rounded-2xl bg-gray-50 border border-gray-100 text-xs text-brand-indigo/60">
-                  Belum ada User ID Telegram yang ditambahkan ke whitelist.
+                  Belum ada User ID Telegram yang didaftarkan.
                 </div>
               {:else}
                 <!-- Member Users with TelegramChatId -->
@@ -408,7 +368,7 @@
                       </div>
                     </div>
                     <span class="text-[10px] text-emerald-600 font-semibold px-2 py-0.5 rounded-full bg-emerald-50">
-                      User Aplikasi
+                      User Terdaftar
                     </span>
                   </div>
                 {/each}
@@ -443,6 +403,68 @@
               {/if}
             </div>
           </div>
+
+          <!-- Collapsible: Advanced Custom Bot Token (Opsional) -->
+          <div class="p-3.5 rounded-2xl bg-gray-50/80 border border-gray-200/70 space-y-2">
+            <button
+              type="button"
+              on:click={() => (showAdvancedBotToken = !showAdvancedBotToken)}
+              class="w-full flex items-center justify-between text-xs font-bold text-brand-indigo/70 hover:text-brand-indigo transition"
+            >
+              <div class="flex items-center gap-2">
+                <KeyRound class="w-3.5 h-3.5 text-brand-indigo/50" />
+                <span>Gunakan Bot Telegram Mandiri Pribadi (Opsional / Lanjutan)</span>
+              </div>
+              {#if showAdvancedBotToken}
+                <ChevronUp class="w-4 h-4 text-brand-indigo/40" />
+              {:else}
+                <ChevronDown class="w-4 h-4 text-brand-indigo/40" />
+              {/if}
+            </button>
+
+            {#if showAdvancedBotToken}
+              <div class="pt-2 space-y-2.5 animate-in fade-in duration-150">
+                <p class="text-[11px] text-brand-indigo/60">
+                  Secara default sistem menggunakan bot resmi @{displayBotUsername}. Namun jika keluarga Anda ingin bot khusus dari @BotFather, masukkan token di bawah:
+                </p>
+                <input
+                  type="text"
+                  bind:value={botTokenInput}
+                  placeholder="Contoh: 7123456789:AAHk..."
+                  class="w-full px-3 py-2 rounded-xl bg-white border border-brand-indigo/15 text-xs text-brand-indigo focus:outline-hidden focus:ring-1 focus:ring-brand-sky"
+                />
+
+                {#if telegramMessage}
+                  <div class="p-2 rounded-xl text-xs font-medium {telegramMessage.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}">
+                    {telegramMessage.text}
+                  </div>
+                {/if}
+
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    on:click={handleSaveTelegramBot}
+                    disabled={savingTelegram}
+                    class="flex-1 py-2 rounded-xl bg-brand-sky-dark text-white text-xs font-bold shadow-xs hover:opacity-95 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  >
+                    <RefreshCw class="w-3 h-3 {savingTelegram ? 'animate-spin' : ''}" />
+                    Simpan Token Mandiri
+                  </button>
+
+                  {#if telegramConfig.configured}
+                    <button
+                      type="button"
+                      on:click={handleStopTelegramBot}
+                      disabled={savingTelegram}
+                      class="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold border border-rose-200 transition"
+                    >
+                      Reset ke Global
+                    </button>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+          </div>
         {/if}
 
         <!-- ================= WHATSAPP TAB ================= -->
@@ -450,7 +472,7 @@
           <div class="p-3.5 rounded-2xl bg-brand-sky-light/80 border border-brand-sky/40 flex items-start gap-2.5 text-xs text-brand-indigo">
             <ShieldCheck class="w-5 h-5 text-brand-sky-dark flex-shrink-0 mt-0.5" />
             <div>
-              <span class="font-bold">WhatsApp Socket Whitelist:</span>
+              <span class="font-bold">WhatsApp Multi-Family Whitelist:</span>
               <p class="text-brand-indigo/70 mt-0.5">
                 Hanya nomor WhatsApp anggota keluarga yang terdaftar yang dilayani. Pesan dari nomor tak dikenal otomatis diabaikan.
               </p>

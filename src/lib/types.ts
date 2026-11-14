@@ -108,6 +108,8 @@ export interface BotStatus {
   whatsappConnected: boolean;
   whatsappQr?: string;
   telegramConnected: boolean;
+  globalTelegramBotRunning?: boolean;
+  globalTelegramBotUsername?: string | null;
   familyTelegramConfigured?: boolean;
   familyTelegramUsername?: string | null;
   isFamilyBotRunning?: boolean;
@@ -126,6 +128,8 @@ export interface TelegramWhitelistItem {
 }
 
 export interface TelegramConfigResponse {
+  globalBotRunning?: boolean;
+  globalBotUsername?: string | null;
   configured: boolean;
   token: string;
   username: string | null;

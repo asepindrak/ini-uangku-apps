@@ -32,7 +32,9 @@ export async function botRoutes(fastify: FastifyInstance) {
     return {
       whatsappConnected: BotGateway.isWaConnected,
       whatsappQr: BotGateway.latestWaQrCode,
-      telegramConnected: TelegramManager.isBotRunning(familyId) || BotGateway.isTelegramConnected,
+      telegramConnected: TelegramManager.isBotRunning(familyId),
+      globalTelegramBotRunning: TelegramManager.isGlobalBotRunning,
+      globalTelegramBotUsername: TelegramManager.globalBotUsername,
       familyTelegramConfigured: Boolean(family?.telegramBotToken),
       familyTelegramUsername: family?.telegramBotUsername || null,
       isFamilyBotRunning: TelegramManager.isBotRunning(familyId),
@@ -65,6 +67,8 @@ export async function botRoutes(fastify: FastifyInstance) {
     });
 
     return {
+      globalBotRunning: TelegramManager.isGlobalBotRunning,
+      globalBotUsername: TelegramManager.globalBotUsername,
       configured: Boolean(family?.telegramBotToken),
       token: family?.telegramBotToken || '',
       username: family?.telegramBotUsername || null,

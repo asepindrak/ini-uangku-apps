@@ -5,12 +5,19 @@ import { ApprovalEngine } from './approval-engine.js';
 import { ActionType, InputSource, TransactionType } from '@prisma/client';
 
 export class TelegramManager {
+  public static globalBot: Bot | null = null;
+  public static globalBotUsername: string | null = null;
+  public static isGlobalBotRunning: boolean = false;
   private static activeBots: Map<string, Bot> = new Map();
 
   /**
-   * Inisialisasi seluruh bot Telegram milik setiap keluarga saat server boot
+   * Inisialisasi Bot Telegram Global dan Bot Telegram Mandiri Milik Keluarga
    */
   static async initAll() {
+    // 1. Inisialisasi Global Telegram Bot (jika token tersedia di environment)
+    await this.initGlobalBot();
+
+    // 2. Inisialisasi Custom Family Telegram Bot (jika ada keluarga yang mengatur token sendiri)
     try {
       const families = await prisma.family.findMany({
         where: {
@@ -18,24 +25,74 @@ export class TelegramManager {
         },
       });
 
-      console.log(`🤖 Memulai ${families.length} bot Telegram mandiri keluarga...`);
-      for (const fam of families) {
-        if (fam.telegramBotToken) {
-          await this.startFamilyBot(fam.id, fam.telegramBotToken).catch((err) => {
-            console.error(`Gagal memulai bot Telegram untuk keluarga ${fam.name}:`, err.message);
-          });
+      if (families.length > 0) {
+        console.log(`🤖 Memulai ${families.length} bot Telegram mandiri keluarga...`);
+        for (const fam of families) {
+          if (fam.telegramBotToken) {
+            await this.startFamilyBot(fam.id, fam.telegramBotToken).catch((err) => {
+              console.error(`Gagal memulai bot Telegram mandiri untuk keluarga ${fam.name}:`, err.message);
+            });
+          }
         }
       }
     } catch (err) {
-      console.error('Error saat inisialisasi TelegramManager:', err);
+      console.error('Error saat inisialisasi custom bot Telegram:', err);
     }
   }
 
   /**
-   * Cek apakah bot Telegram keluarga sedang aktif
+   * Inisialisasi Bot Telegram Global (Official Shared Bot)
    */
-  static isBotRunning(familyId: string): boolean {
-    return this.activeBots.has(familyId);
+  static async initGlobalBot() {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (!token || !token.trim()) {
+      console.log('ℹ️ TELEGRAM_BOT_TOKEN belum diisi di environment. Global Telegram Bot dilewati.');
+      return;
+    }
+
+    try {
+      if (this.globalBot) {
+        try {
+          this.globalBot.stop();
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      const bot = new Bot(token.trim());
+      const me = await bot.api.getMe();
+      this.globalBot = bot;
+      this.globalBotUsername = me.username;
+      this.isGlobalBotRunning = true;
+
+      // 1. Command /start
+      bot.command('start', async (ctx) => {
+        await this.handleStartCommand(ctx, null);
+      });
+
+      // 2. Incoming Messages
+      bot.on(['message:text', 'message:photo', 'message:voice'], async (ctx) => {
+        await this.handleIncomingMessage(null, ctx, token.trim());
+      });
+
+      // Jalankan polling bot global
+      bot.start({
+        onStart: () => {
+          console.log(`✅ Global Telegram Bot @${this.globalBotUsername} aktif dan siap melayani seluruh keluarga!`);
+        },
+      });
+    } catch (err: any) {
+      this.isGlobalBotRunning = false;
+      console.error('❌ Gagal menginisialisasi Global Telegram Bot:', err.message);
+    }
+  }
+
+  /**
+   * Cek apakah bot Telegram (global atau keluarga) sedang aktif
+   */
+  static isBotRunning(familyId?: string): boolean {
+    if (familyId && this.activeBots.has(familyId)) return true;
+    return this.isGlobalBotRunning;
   }
 
   /**
@@ -60,12 +117,9 @@ export class TelegramManager {
     await this.stopFamilyBot(familyId);
 
     const bot = new Bot(botToken.trim());
-
-    // 1. Validasi token dengan getMe()
     const me = await bot.api.getMe();
     const botUsername = me.username;
 
-    // 2. Simpan token & username ke database
     await prisma.family.update({
       where: { id: familyId },
       data: {
@@ -74,53 +128,17 @@ export class TelegramManager {
       },
     });
 
-    // 3. Listener /start
     bot.command('start', async (ctx) => {
-      const chatId = String(ctx.from?.id);
-      const family = await prisma.family.findUnique({
-        where: { id: familyId },
-        include: { users: true, whitelists: true },
-      });
-
-      if (!family) return;
-
-      const isWhitelisted =
-        family.users.some((u) => u.telegramChatId === chatId) ||
-        family.whitelists.some((w) => w.platform === 'TELEGRAM' && w.identifier === chatId);
-
-      if (!isWhitelisted) {
-        await ctx.reply(
-          `Halo ${ctx.from?.first_name || ''}! 👋\n\n` +
-          `ID Telegram Anda adalah: \`${chatId}\`\n\n` +
-          `⚠️ Anda *belum terdaftar* di whitelist keluarga *"${family.name}"*.\n` +
-          `Silakan berikan ID Telegram ini kepada Manager keluarga untuk ditambahkan di aplikasi agar Anda bisa mencatat keuangan.`,
-          { parse_mode: 'Markdown' }
-        );
-        return;
-      }
-
-      await ctx.reply(
-        `Halo ${ctx.from?.first_name || ''}! 🎀\n\n` +
-        `Selamat datang di Bot Finansial Keluarga *"${family.name}"*.\n\n` +
-        `Anda dapat:\n` +
-        `• Mengirim pesan teks belanja (e.g. *"Beli beras 75rb bayar pake BCA"*)\n` +
-        `• Mengirim foto nota / struk belanjaan\n` +
-        `• Mengirim foto kotretan catatan belanja di kertas\n` +
-        `• Mengirim voice note (rekaman suara)\n\n` +
-        `Setiap draf yang dideteksi akan diajukan ke Anda terlebih dahulu untuk disetujui!`,
-        { parse_mode: 'Markdown' }
-      );
+      await this.handleStartCommand(ctx, familyId);
     });
 
-    // 4. Listener pesan masuk
     bot.on(['message:text', 'message:photo', 'message:voice'], async (ctx) => {
-      await this.handleIncomingMessage(familyId, ctx);
+      await this.handleIncomingMessage(familyId, ctx, botToken.trim());
     });
 
-    // 5. Jalankan polling
     bot.start({
       onStart: () => {
-        console.log(`✅ Bot Telegram @${botUsername} aktif untuk keluarga ${familyId}!`);
+        console.log(`✅ Bot Telegram Mandiri @${botUsername} aktif untuk keluarga ${familyId}!`);
       },
     });
 
@@ -129,46 +147,113 @@ export class TelegramManager {
   }
 
   /**
-   * Handle pesan masuk dari bot Telegram keluarga
+   * Handler untuk command /start
    */
-  private static async handleIncomingMessage(familyId: string, ctx: any) {
+  private static async handleStartCommand(ctx: any, targetFamilyId: string | null) {
     const chatId = String(ctx.from?.id);
 
-    // Ambil data keluarga dan cek apakah chatId ada di whitelist
-    const family = await prisma.family.findUnique({
-      where: { id: familyId },
-      include: {
-        users: true,
-        whitelists: {
-          where: { platform: 'TELEGRAM' },
-        },
+    // Cari user berdasarkan telegramChatId
+    let user = await prisma.user.findFirst({
+      where: {
+        telegramChatId: chatId,
+        ...(targetFamilyId ? { familyId: targetFamilyId } : {}),
       },
+      include: { family: true },
     });
 
-    if (!family) return;
+    // Jika belum ada di tabel User, cek tabel BotWhitelist
+    if (!user) {
+      const whitelist = await prisma.botWhitelist.findFirst({
+        where: {
+          platform: 'TELEGRAM',
+          identifier: chatId,
+          ...(targetFamilyId ? { familyId: targetFamilyId } : {}),
+        },
+        include: { family: { include: { users: true } } },
+      });
 
-    // Cari user yang bersangkutan
-    let user = family.users.find((u) => u.telegramChatId === chatId);
-    const whitelistEntry = family.whitelists.find((w) => w.identifier === chatId);
+      if (whitelist && whitelist.family.users.length > 0) {
+        user = whitelist.family.users[0] as any;
+        (user as any).family = whitelist.family;
+      }
+    }
 
-    // Jika tidak ada di user dan tidak ada di whitelist -> Silent Drop / Reject
-    if (!user && !whitelistEntry) {
+    if (!user) {
       await ctx.reply(
-        `⚠️ ID Telegram Anda (\`${chatId}\`) belum terdaftar di whitelist keluarga "${family.name}". Hubungi Manager keluarga Anda untuk mendaftarkan ID ini.`,
+        `Halo ${ctx.from?.first_name || ''}! 👋\n\n` +
+        `ID Telegram Anda adalah: \`${chatId}\`\n\n` +
+        `⚠️ ID ini *belum terdaftar* di keluarga mana pun di aplikasi *Ini Uangku*.\n\n` +
+        `Salin ID di atas dan berikan kepada Manager keluarga Anda untuk ditambahkan ke daftar whitelist di aplikasi, agar Anda dapat mulai mencatat keuangan keluarga.`,
         { parse_mode: 'Markdown' }
       );
       return;
     }
 
-    // Jika user belum memiliki record User utama, gunakan Manager atau User terdaftar pertama
-    if (!user) {
-      user = family.users[0];
-    }
-    if (!user) return;
+    await ctx.reply(
+      `Halo ${user.name || ctx.from?.first_name}! 🎀\n\n` +
+      `Selamat datang di Bot Finansial Keluarga *"${user.family.name}"*.\n\n` +
+      `Bot siap membantu mencatat keuangan keluarga Anda:\n` +
+      `• Ketik pesan belanja (e.g. *"Beli beras 75rb bayar pake BCA"*)\n` +
+      `• Kirim foto nota / struk belanjaan\n` +
+      `• Kirim foto catatan coretan belanja di kertas\n` +
+      `• Kirim rekaman suara (Voice Note)\n\n` +
+      `Setiap draf yang terdeteksi akan diajukan ke Anda terlebih dahulu untuk disetujui (*"Ya"* / *"Setuju"*)!`,
+      { parse_mode: 'Markdown' }
+    );
+  }
 
+  /**
+   * Handle pesan masuk dari Telegram (Global atau Custom Family Bot)
+   */
+  private static async handleIncomingMessage(targetFamilyId: string | null, ctx: any, botToken: string) {
+    const chatId = String(ctx.from?.id);
+
+    // 1. Identifikasi User dan Keluarga pengirim
+    let user = await prisma.user.findFirst({
+      where: {
+        telegramChatId: chatId,
+        ...(targetFamilyId ? { familyId: targetFamilyId } : {}),
+      },
+      include: { family: true },
+    });
+
+    let effectiveFamily = user?.family;
+
+    // Jika tidak ditemukan di tabel User, cek di tabel BotWhitelist
+    if (!user) {
+      const whitelistEntry = await prisma.botWhitelist.findFirst({
+        where: {
+          platform: 'TELEGRAM',
+          identifier: chatId,
+          ...(targetFamilyId ? { familyId: targetFamilyId } : {}),
+        },
+        include: {
+          family: {
+            include: { users: true },
+          },
+        },
+      });
+
+      if (whitelistEntry && whitelistEntry.family) {
+        effectiveFamily = whitelistEntry.family;
+        user = whitelistEntry.family.users[0] as any;
+      }
+    }
+
+    // JIKA TIDAK ADA DI WHITELIST KELUARGA MANA PUN -> Beritahu petunjuk pendaftaran
+    if (!user || !effectiveFamily) {
+      await ctx.reply(
+        `⚠️ ID Telegram Anda (\`${chatId}\`) belum terdaftar di aplikasi Ini Uangku.\n` +
+        `Silakan berikan ID ini kepada Manager keluarga Anda untuk didaftarkan di menu Whitelist Bot.`,
+        { parse_mode: 'Markdown' }
+      );
+      return;
+    }
+
+    const familyId = effectiveFamily.id;
     const textContent = ctx.message?.text || ctx.message?.caption || '';
 
-    // Cek apakah pesan adalah persetujuan untuk Draf yang sedang aktif
+    // 2. Cek apakah pesan adalah persetujuan untuk Draf yang sedang aktif
     const activePending = await ApprovalEngine.getActivePendingAction(user.id);
     if (activePending && textContent) {
       const response = await ApprovalEngine.processResponse(user.id, textContent);
@@ -180,7 +265,7 @@ export class TelegramManager {
       }
     }
 
-    // Ambil context Dompet & Kategori keluarga
+    // 3. Ambil context Dompet & Kategori keluarga
     const [wallets, categories] = await Promise.all([
       prisma.wallet.findMany({
         where: { familyId },
@@ -195,14 +280,14 @@ export class TelegramManager {
     let imageBase64: string | undefined = undefined;
     let audioBase64: string | undefined = undefined;
 
-    // Handle Foto (Struk / Kotretan Kertas)
+    // 4. Handle Foto (Struk / Catatan Kertas)
     if (ctx.message?.photo && ctx.message.photo.length > 0) {
       await ctx.reply('🔍 Sedang membaca foto nota / tulisan tangan Anda dengan AI...');
       try {
         const photo = ctx.message.photo[ctx.message.photo.length - 1]; // Resolusi tertinggi
         const file = await ctx.api.getFile(photo.file_id);
         if (file.file_path) {
-          const fileUrl = `https://api.telegram.org/file/bot${family.telegramBotToken}/${file.file_path}`;
+          const fileUrl = `https://api.telegram.org/file/bot${botToken}/${file.file_path}`;
           const res = await fetch(fileUrl);
           const buf = Buffer.from(await res.arrayBuffer());
           imageBase64 = buf.toString('base64');
@@ -212,13 +297,13 @@ export class TelegramManager {
       }
     }
 
-    // Handle Voice Note
+    // 5. Handle Voice Note
     if (ctx.message?.voice) {
       await ctx.reply('🎙️ Sedang mendengarkan pesan suara Anda...');
       try {
         const file = await ctx.api.getFile(ctx.message.voice.file_id);
         if (file.file_path) {
-          const fileUrl = `https://api.telegram.org/file/bot${family.telegramBotToken}/${file.file_path}`;
+          const fileUrl = `https://api.telegram.org/file/bot${botToken}/${file.file_path}`;
           const res = await fetch(fileUrl);
           const buf = Buffer.from(await res.arrayBuffer());
           audioBase64 = buf.toString('base64');
@@ -230,7 +315,7 @@ export class TelegramManager {
 
     if (!textContent && !imageBase64 && !audioBase64) return;
 
-    // Ekstraksi dengan AI
+    // 6. Ekstraksi dengan AI (hanya menggunakan dompet & kategori keluarga ini)
     const extracted = await LLMProviderService.extractTransaction({
       familyId,
       rawText: textContent,
@@ -247,7 +332,7 @@ export class TelegramManager {
       return;
     }
 
-    // Buat draf persetujuan (Human-in-the-Loop)
+    // 7. Buat draf persetujuan (Human-in-the-Loop)
     const proposedPayload = {
       walletId: extracted.walletId,
       categoryId: extracted.categoryId,
@@ -281,19 +366,27 @@ export class TelegramManager {
   }
 
   /**
-   * Kirim pesan ke chatId pengguna melalui bot Telegram milik keluarga tertentu
+   * Kirim pesan ke chatId pengguna melalui Telegram (Global Bot atau Custom Family Bot)
    */
   static async sendMessage(familyId: string, chatId: string, text: string) {
-    const bot = this.activeBots.get(familyId);
-    if (!bot) {
-      console.warn(`Bot Telegram untuk keluarga ${familyId} tidak aktif.`);
-      return;
+    const customBot = this.activeBots.get(familyId);
+    if (customBot) {
+      try {
+        await customBot.api.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+        return;
+      } catch (err: any) {
+        console.error(`Gagal mengirim via custom bot ke ${chatId}:`, err.message);
+      }
     }
 
-    try {
-      await bot.api.sendMessage(chatId, text, { parse_mode: 'Markdown' });
-    } catch (err: any) {
-      console.error(`Gagal mengirim pesan Telegram ke ${chatId}:`, err.message);
+    if (this.globalBot) {
+      try {
+        await this.globalBot.api.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+      } catch (err: any) {
+        console.error(`Gagal mengirim via global Telegram bot ke ${chatId}:`, err.message);
+      }
+    } else {
+      console.warn(`Tidak ada bot Telegram yang aktif untuk mengirim pesan ke ${chatId}`);
     }
   }
 }
