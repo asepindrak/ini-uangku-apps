@@ -3,10 +3,8 @@ import { prisma } from '../db.js';
 import { LLMProviderService } from '../services/llm-provider.js';
 
 export async function llmRoutes(fastify: FastifyInstance) {
-  fastify.addHook('preHandler', fastify.authenticate);
-
-  // Get current LLM Config
-  fastify.get('/config', async (request) => {
+  // Get current LLM Config (Protected)
+  fastify.get('/config', { preHandler: [fastify.authenticate] }, async (request) => {
     const { familyId } = (request as any).user;
     const config = await prisma.llmConfig.findUnique({
       where: { familyId },
@@ -22,8 +20,8 @@ export async function llmRoutes(fastify: FastifyInstance) {
     };
   });
 
-  // Update LLM Config
-  fastify.put('/config', async (request, reply) => {
+  // Update LLM Config (Protected)
+  fastify.put('/config', { preHandler: [fastify.authenticate] }, async (request, reply) => {
     const { familyId } = (request as any).user;
     const { activeProvider, apiKey, baseUrl, modelName, temperature } = request.body as any;
 
@@ -58,9 +56,16 @@ export async function llmRoutes(fastify: FastifyInstance) {
     };
   });
 
-  // Test LLM Connection
+  // Test LLM Connection (Bisa dengan token atau tanpa token)
   fastify.post('/test', async (request) => {
-    const { familyId } = (request as any).user;
+    let familyId: string | undefined = undefined;
+    try {
+      const decoded: any = await request.jwtVerify();
+      familyId = decoded?.familyId;
+    } catch {
+      // Optional auth: jika belum login, testConnection tetap berjalan dengan apiKey yang diinput
+    }
+
     const { activeProvider, apiKey, baseUrl, modelName } = request.body as any;
 
     const result = await LLMProviderService.testConnection({
