@@ -2,18 +2,39 @@
   import { onMount } from 'svelte';
   import qrcode from 'qrcode';
   import { api } from '../api';
-  import { X, Copy, Check, Share2, QrCode, UserPlus, Phone, Send } from 'lucide-svelte';
+  import { X, Copy, Check, Share2, QrCode, UserPlus, Phone, Send, Clock, Globe, Sparkles } from 'lucide-svelte';
 
   export let isOpen: boolean = false;
   export let onClose: () => void;
   export let onMemberAdded: () => void;
 
-  let activeTab: 'invite' | 'direct' = 'invite';
+  let activeTab: 'invite' | 'direct' | 'timezone' = 'invite';
   let inviteCode = '';
   let inviteUrl = '';
   let familyName = '';
   let qrCodeDataUrl = '';
   let copied = false;
+
+  // Timezone state
+  let currentTimezone = 'Asia/Jakarta';
+  let selectedTimezone = 'Asia/Jakarta';
+  let savingTz = false;
+  let tzSuccessMsg = '';
+  let tzErrorMsg = '';
+
+  const timezoneOptions = [
+    { value: 'Asia/Jakarta', label: '🇮🇩 WIB - Jakarta, Bandung, Medan, Surabaya (UTC+7)' },
+    { value: 'Asia/Pontianak', label: '🇮🇩 WIB - Pontianak (UTC+7)' },
+    { value: 'Asia/Makassar', label: '🇮🇩 WITA - Makassar, Bali, Banjarmasin, Manado (UTC+8)' },
+    { value: 'Asia/Jayapura', label: '🇮🇩 WIT - Jayapura, Ambon, Papua (UTC+9)' },
+    { value: 'Asia/Singapore', label: '🇸🇬 Singapura (UTC+8)' },
+    { value: 'Asia/Kuala_Lumpur', label: '🇲🇾 Malaysia (UTC+8)' },
+    { value: 'Asia/Tokyo', label: '🇯🇵 Tokyo / Jepang (UTC+9)' },
+    { value: 'Asia/Riyadh', label: '🇸🇦 Arab Saudi / Mekkah (UTC+3)' },
+    { value: 'Europe/London', label: '🇬🇧 London / GMT (UTC+0/+1)' },
+    { value: 'America/New_York', label: '🇺🇸 New York / EST (UTC-5/-4)' },
+    { value: 'Australia/Sydney', label: '🇦🇺 Sydney (UTC+10/+11)' },
+  ];
 
   // Direct add form state
   let memberName = '';
@@ -46,10 +67,17 @@
 
   async function loadInvite() {
     try {
-      const data = await api.getInvite();
+      const [data, profile] = await Promise.all([
+        api.getInvite(),
+        api.getFamilyProfile().catch(() => null),
+      ]);
       inviteCode = data.inviteCode;
       inviteUrl = data.inviteUrl;
       familyName = data.familyName;
+      if (profile && profile.timezone) {
+        currentTimezone = profile.timezone;
+        selectedTimezone = profile.timezone;
+      }
       qrCodeDataUrl = await qrcode.toDataURL(inviteUrl, {
         width: 260,
         margin: 2,
@@ -59,7 +87,53 @@
         },
       });
     } catch (e) {
-      console.error('Failed to load invite:', e);
+      console.error('Failed to load invite or profile:', e);
+    }
+  }
+
+  function detectDeviceTimezone() {
+    try {
+      const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (detected) {
+        selectedTimezone = detected;
+        tzSuccessMsg = `Terdeteksi zona waktu perangkat: ${detected}`;
+        setTimeout(() => (tzSuccessMsg = ''), 3000);
+      }
+    } catch (e: any) {
+      tzErrorMsg = 'Gagal mendeteksi timezone perangkat.';
+    }
+  }
+
+  async function handleSaveTimezone() {
+    savingTz = true;
+    tzErrorMsg = '';
+    tzSuccessMsg = '';
+    try {
+      const res = await api.updateFamilyTimezone(selectedTimezone);
+      currentTimezone = res.timezone;
+      tzSuccessMsg = `Zona waktu keluarga berhasil diperbarui ke ${res.timezone}!`;
+      setTimeout(() => (tzSuccessMsg = ''), 4000);
+    } catch (err: any) {
+      tzErrorMsg = err.message || 'Gagal memperbarui zona waktu.';
+    } finally {
+      savingTz = false;
+    }
+  }
+
+  function getPreviewTime(tz: string): string {
+    try {
+      return new Intl.DateTimeFormat('id-ID', {
+        timeZone: tz,
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      }).format(new Date());
+    } catch {
+      return '-';
     }
   }
 
@@ -141,6 +215,13 @@
           <Phone class="w-4 h-4" />
           Input No WA & Telegram
         </button>
+        <button
+          on:click={() => (activeTab = 'timezone')}
+          class="pb-2.5 text-xs font-bold transition border-b-2 flex items-center gap-1.5 {activeTab === 'timezone' ? 'border-brand-peach-dark text-brand-indigo' : 'border-transparent text-brand-indigo/50 hover:text-brand-indigo'}"
+        >
+          <Clock class="w-4 h-4" />
+          Zona Waktu
+        </button>
       </div>
 
       <div class="p-6 max-h-[65vh] overflow-y-auto">
@@ -186,7 +267,7 @@
               Bagikan ke Grup WhatsApp Keluarga
             </button>
           </div>
-        {:else}
+        {:else if activeTab === 'direct'}
           <!-- Direct Add Form -->
           <form on:submit|preventDefault={handleDirectAdd} class="space-y-3.5">
             {#if errorMsg}
@@ -247,6 +328,86 @@
               {loading ? 'Menyimpan...' : 'Tambahkan ke Whitelist Keluarga'}
             </button>
           </form>
+        {:else if activeTab === 'timezone'}
+          <div class="space-y-4">
+            <div class="p-3.5 rounded-2xl bg-brand-sky-light/40 border border-brand-sky/20">
+              <div class="flex items-start gap-2.5">
+                <Globe class="w-4 h-4 text-brand-sky mt-0.5 shrink-0" />
+                <p class="text-xs text-brand-indigo/80 leading-relaxed">
+                  Zona waktu digunakan oleh <b>Bot WhatsApp & Telegram</b> untuk menentukan pergantian tanggal hari ini, kemarin, dan jam mutasi transaksi agar sesuai dengan waktu lokal keluarga Anda.
+                </p>
+              </div>
+            </div>
+
+            {#if tzSuccessMsg}
+              <div class="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs rounded-2xl flex items-center gap-2">
+                <Check class="w-4 h-4 shrink-0" />
+                <span>{tzSuccessMsg}</span>
+              </div>
+            {/if}
+
+            {#if tzErrorMsg}
+              <div class="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-2xl">
+                {tzErrorMsg}
+              </div>
+            {/if}
+
+            <!-- Tombol Deteksi Otomatis -->
+            <div>
+              <button
+                type="button"
+                on:click={detectDeviceTimezone}
+                class="w-full py-2.5 px-4 rounded-2xl bg-white border border-brand-sky/40 text-brand-indigo text-xs font-bold shadow-xs hover:bg-brand-sky-light/30 transition flex items-center justify-center gap-2"
+              >
+                <Sparkles class="w-4 h-4 text-brand-sky" />
+                Deteksi Otomatis dari Perangkat Saya
+              </button>
+            </div>
+
+            <!-- Pilih Timezone Presets -->
+            <div>
+              <label class="block text-xs font-bold text-brand-indigo mb-1.5">Pilih Zona Waktu Keluarga</label>
+              <select
+                bind:value={selectedTimezone}
+                class="w-full px-3.5 py-2.5 rounded-2xl bg-white/80 border border-white text-xs text-brand-indigo shadow-inner outline-none focus:ring-2 focus:ring-brand-sky"
+              >
+                {#each timezoneOptions as opt}
+                  <option value={opt.value}>{opt.label}</option>
+                {/each}
+              </select>
+            </div>
+
+            <!-- Custom Timezone String -->
+            <div>
+              <label class="block text-xs font-bold text-brand-indigo mb-1">Zona Waktu IANA (Kustom)</label>
+              <input
+                type="text"
+                bind:value={selectedTimezone}
+                placeholder="Contoh: Asia/Jakarta"
+                class="w-full px-4 py-2.5 rounded-2xl bg-white/80 border border-white text-xs text-brand-indigo shadow-inner outline-none font-mono focus:ring-2 focus:ring-brand-sky"
+              />
+              <p class="text-[11px] text-brand-indigo/50 mt-1">Standar IANA (contoh: Asia/Jakarta, Asia/Makassar, Asia/Jayapura).</p>
+            </div>
+
+            <!-- Preview Jam Lokal -->
+            <div class="p-3.5 rounded-2xl bg-white border border-brand-indigo/10 shadow-xs">
+              <span class="block text-[11px] font-bold text-brand-indigo/60 uppercase tracking-wider mb-1">Pratinjau Waktu Saat Ini</span>
+              <span class="text-sm font-extrabold text-brand-indigo block">
+                {getPreviewTime(selectedTimezone)}
+              </span>
+            </div>
+
+            <!-- Tombol Simpan -->
+            <button
+              type="button"
+              on:click={handleSaveTimezone}
+              disabled={savingTz}
+              class="w-full py-3 rounded-2xl bg-gradient-to-r from-brand-peach via-brand-butter to-brand-sky text-brand-indigo text-xs font-extrabold shadow-sm hover:scale-[1.01] transition disabled:opacity-50 mt-2 flex items-center justify-center gap-1.5"
+            >
+              <Clock class="w-4 h-4" />
+              {savingTz ? 'Menyimpan Zona Waktu...' : 'Simpan Zona Waktu Keluarga'}
+            </button>
+          </div>
         {/if}
       </div>
     </div>

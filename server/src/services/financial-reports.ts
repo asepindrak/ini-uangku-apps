@@ -1,5 +1,6 @@
 import { prisma } from '../db.js';
 import { TransactionType } from '@prisma/client';
+import { TimezoneService } from './timezone-service.js';
 
 export class FinancialReportsService {
   /**
@@ -37,13 +38,13 @@ export class FinancialReportsService {
    * Laporan Pengeluaran & Pemasukan Hari Ini
    */
   static async getHariIniReport(familyId: string): Promise<string> {
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tz = await TimezoneService.getFamilyTimezone(familyId);
+    const bounds = TimezoneService.getTimezoneBounds(tz);
 
     const transactions = await prisma.transaction.findMany({
       where: {
         familyId,
-        transactionDate: { gte: startOfToday },
+        transactionDate: { gte: bounds.startOfToday },
       },
       include: {
         wallet: true,
@@ -52,8 +53,10 @@ export class FinancialReportsService {
       orderBy: { transactionDate: 'desc' },
     });
 
+    const todayDateLabel = TimezoneService.formatDate(new Date(), tz, { dateStyle: 'full' });
+
     if (transactions.length === 0) {
-      return `☀️ *Laporan Hari Ini (${now.toLocaleDateString('id-ID', { dateStyle: 'full' })})*\n\nBelum ada pengeluaran atau pemasukan yang dicatat hari ini.`;
+      return `☀️ *Laporan Hari Ini (${todayDateLabel})*\n\nBelum ada pengeluaran atau pemasukan yang dicatat hari ini.`;
     }
 
     let totalExpense = 0;
@@ -62,7 +65,7 @@ export class FinancialReportsService {
 
     for (const t of transactions) {
       const amt = Number(t.amount);
-      const timeStr = new Date(t.transactionDate).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+      const timeStr = TimezoneService.formatTime(t.transactionDate, tz);
       if (t.type === TransactionType.EXPENSE) {
         totalExpense += amt;
         lines.push(`• [${timeStr}] *${t.description}*: -Rp ${amt.toLocaleString('id-ID')} (${t.wallet.name})`);
@@ -73,7 +76,7 @@ export class FinancialReportsService {
     }
 
     return (
-      `☀️ *Laporan Hari Ini (${now.toLocaleDateString('id-ID', { dateStyle: 'full' })})*\n\n` +
+      `☀️ *Laporan Hari Ini (${todayDateLabel})*\n\n` +
       lines.join('\n') +
       `\n\n━━━━━━━━━━━━━━━━━━━━\n` +
       `🔴 *Total Pengeluaran*: Rp ${totalExpense.toLocaleString('id-ID')}\n` +
@@ -85,16 +88,15 @@ export class FinancialReportsService {
    * Laporan Pengeluaran Kemarin
    */
   static async getKemarinReport(familyId: string): Promise<string> {
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    const tz = await TimezoneService.getFamilyTimezone(familyId);
+    const bounds = TimezoneService.getTimezoneBounds(tz);
 
     const transactions = await prisma.transaction.findMany({
       where: {
         familyId,
         transactionDate: {
-          gte: startOfYesterday,
-          lt: startOfToday,
+          gte: bounds.startOfYesterday,
+          lt: bounds.startOfToday,
         },
       },
       include: {
@@ -104,7 +106,7 @@ export class FinancialReportsService {
       orderBy: { transactionDate: 'desc' },
     });
 
-    const yesterdayLabel = startOfYesterday.toLocaleDateString('id-ID', { dateStyle: 'full' });
+    const yesterdayLabel = TimezoneService.formatDate(bounds.startOfYesterday, tz, { dateStyle: 'full' });
 
     if (transactions.length === 0) {
       return `📅 *Laporan Kemarin (${yesterdayLabel})*\n\nTidak ada catatan transaksi kemarin.`;
@@ -116,12 +118,13 @@ export class FinancialReportsService {
 
     for (const t of transactions) {
       const amt = Number(t.amount);
+      const timeStr = TimezoneService.formatTime(t.transactionDate, tz);
       if (t.type === TransactionType.EXPENSE) {
         totalExpense += amt;
-        lines.push(`• *${t.description}*: -Rp ${amt.toLocaleString('id-ID')} (${t.wallet.name})`);
+        lines.push(`• [${timeStr}] *${t.description}*: -Rp ${amt.toLocaleString('id-ID')} (${t.wallet.name})`);
       } else if (t.type === TransactionType.INCOME) {
         totalIncome += amt;
-        lines.push(`• *${t.description}*: +Rp ${amt.toLocaleString('id-ID')} (${t.wallet.name})`);
+        lines.push(`• [${timeStr}] *${t.description}*: +Rp ${amt.toLocaleString('id-ID')} (${t.wallet.name})`);
       }
     }
 
@@ -138,15 +141,15 @@ export class FinancialReportsService {
    * Laporan Bulan Berjalan
    */
   static async getBulanIniReport(familyId: string): Promise<string> {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const tz = await TimezoneService.getFamilyTimezone(familyId);
+    const bounds = TimezoneService.getTimezoneBounds(tz);
 
     const [grouped, categories] = await Promise.all([
       prisma.transaction.groupBy({
         by: ['type'],
         where: {
           familyId,
-          transactionDate: { gte: startOfMonth },
+          transactionDate: { gte: bounds.startOfThisMonth },
         },
         _sum: { amount: true },
       }),
@@ -163,7 +166,7 @@ export class FinancialReportsService {
       if (g.type === TransactionType.INCOME) totalIncome += sum;
     }
 
-    const monthName = now.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+    const monthName = TimezoneService.formatDate(new Date(), tz, { month: 'long', year: 'numeric' });
     const net = totalIncome - totalExpense;
 
     let budgetLines: string[] = [];
@@ -174,7 +177,7 @@ export class FinancialReportsService {
             familyId,
             categoryId: cat.id,
             type: TransactionType.EXPENSE,
-            transactionDate: { gte: startOfMonth },
+            transactionDate: { gte: bounds.startOfThisMonth },
           },
           _sum: { amount: true },
         });

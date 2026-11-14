@@ -52,6 +52,8 @@ export const api = {
   addMember: (data: any) => request<any>('/api/family/members', { method: 'POST', body: JSON.stringify(data) }),
   deleteMember: (id: string) => request<any>(`/api/family/members/${id}`, { method: 'DELETE' }),
   getInvite: () => request<{ inviteCode: string; inviteUrl: string; familyName: string }>('/api/family/invite'),
+  getFamilyProfile: () => request<any>('/api/family/profile'),
+  updateFamilyTimezone: (timezone: string) => request<any>('/api/family/timezone', { method: 'PATCH', body: JSON.stringify({ timezone }) }),
 
   // Wallets
   getWallets: () => request<any[]>('/api/wallets'),

@@ -17,6 +17,7 @@ services:
       - BAILEYS_AUTH_DIR=${BAILEYS_AUTH_DIR:-/app/baileys_auth}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - TZ=${TZ:-Asia/Jakarta}
     volumes:
       - baileys_data:/app/baileys_auth
     networks:

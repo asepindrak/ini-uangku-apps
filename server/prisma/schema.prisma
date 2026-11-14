@@ -15,6 +15,7 @@ model Family {
   managerId           String
   telegramBotToken    String?         // Bot Token Telegram mandiri per keluarga
   telegramBotUsername String?         // Username bot Telegram (@Keluarga_bot)
+  timezone            String          @default("Asia/Jakarta") // Zona waktu keluarga (e.g. Asia/Jakarta, Asia/Makassar, Asia/Jayapura)
   createdAt           DateTime        @default(now())
   updatedAt           DateTime        @updatedAt
   

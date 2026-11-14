@@ -3,6 +3,7 @@ import { prisma } from '../db.js';
 import { LLMProviderService } from './llm-provider.js';
 import { ApprovalEngine } from './approval-engine.js';
 import { FinancialReportsService } from './financial-reports.js';
+import { TimezoneService } from './timezone-service.js';
 import { ActionType, ActionStatus, InputSource, TransactionType } from '@prisma/client';
 
 export class TelegramManager {
@@ -405,25 +406,20 @@ export class TelegramManager {
       }
     }
 
-    // 3. Konteks Waktu & Agregasi Temporal Finansial Keluarga
-    const now = new Date();
-    const currentDateIso = now.toISOString().split('T')[0];
-    const currentDateTimeFormatted = now.toLocaleDateString('id-ID', {
-      timeZone: 'Asia/Jakarta',
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    }) + ' WIB';
+    // 3. Konteks Waktu & Agregasi Temporal Finansial Keluarga (Berdasarkan Timezone Keluarga)
+    const tz = await TimezoneService.getFamilyTimezone(familyId);
+    const bounds = TimezoneService.getTimezoneBounds(tz);
 
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-    const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
-    const startOfThisYear = new Date(now.getFullYear(), 0, 1);
+    const currentDateIso = bounds.todayIso;
+    const currentDateTimeFormatted = bounds.nowFormatted;
+
+    const startOfToday = bounds.startOfToday;
+    const startOfYesterday = bounds.startOfYesterday;
+    const endOfYesterday = bounds.endOfYesterday;
+    const startOfThisMonth = bounds.startOfThisMonth;
+    const startOfLastMonth = bounds.startOfLastMonth;
+    const endOfLastMonth = bounds.endOfLastMonth;
+    const startOfThisYear = bounds.startOfThisYear;
 
     const [
       wallets,
@@ -504,11 +500,9 @@ export class TelegramManager {
 
     const formattedRecent = recentTransactions.map((t) => {
       const d = new Date(t.transactionDate);
-      const isToday = d.toDateString() === now.toDateString();
-      const yDay = new Date(now);
-      yDay.setDate(yDay.getDate() - 1);
-      const isYesterday = d.toDateString() === yDay.toDateString();
-      const relLabel = isToday ? 'Hari Ini' : isYesterday ? 'Kemarin' : d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+      const isToday = d.getTime() >= startOfToday.getTime() && d.getTime() <= bounds.endOfToday.getTime();
+      const isYesterday = d.getTime() >= startOfYesterday.getTime() && d.getTime() < startOfToday.getTime();
+      const relLabel = isToday ? 'Hari Ini' : isYesterday ? 'Kemarin' : TimezoneService.formatDate(d, tz, { day: 'numeric', month: 'short' });
 
       return {
         id: t.id,
@@ -516,7 +510,7 @@ export class TelegramManager {
         amount: Number(t.amount),
         type: t.type,
         date: d.toISOString().split('T')[0],
-        time: d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+        time: TimezoneService.formatTime(d, tz),
         label: relLabel,
         walletName: t.wallet?.name || 'Dompet',
         categoryName: t.category?.name || 'Umum',

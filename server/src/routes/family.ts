@@ -113,6 +113,53 @@ export async function familyRoutes(fastify: FastifyInstance) {
     return { success: true };
   });
 
+  // Get Family Profile (Termasuk Timezone)
+  fastify.get('/profile', async (request) => {
+    const { familyId } = (request as any).user;
+    const family = await prisma.family.findUnique({
+      where: { id: familyId },
+      select: {
+        id: true,
+        name: true,
+        inviteCode: true,
+        timezone: true,
+        telegramBotUsername: true,
+        createdAt: true,
+      },
+    });
+
+    return family;
+  });
+
+  // Update Timezone Keluarga (Bisa diset manual atau otomatis dari browser/device)
+  fastify.patch('/timezone', async (request, reply) => {
+    const { familyId, role } = (request as any).user;
+    const { timezone } = request.body as any;
+
+    if (!timezone || typeof timezone !== 'string') {
+      return reply.status(400).send({ error: 'Parameter timezone wajib diisi.' });
+    }
+
+    // Validasi apakah timezone IANA valid
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: timezone });
+    } catch {
+      return reply.status(400).send({ error: `Format timezone "${timezone}" tidak valid.` });
+    }
+
+    const updated = await prisma.family.update({
+      where: { id: familyId },
+      data: { timezone },
+      select: { id: true, name: true, timezone: true },
+    });
+
+    return {
+      success: true,
+      timezone: updated.timezone,
+      message: `Zona waktu keluarga berhasil diperbarui ke ${updated.timezone}`,
+    };
+  });
+
   // Get Invite Link & Code
   fastify.get('/invite', async (request) => {
     const { familyId } = (request as any).user;
