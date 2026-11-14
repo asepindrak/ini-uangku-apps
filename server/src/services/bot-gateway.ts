@@ -157,7 +157,7 @@ export class BotGateway {
     const phoneNumber = remoteJid.replace('@s.whatsapp.net', '').replace(/[^0-9]/g, '');
 
     // 1. Cek Whitelist: User terdaftar di database
-    const user = await prisma.user.findFirst({
+    let user = await prisma.user.findFirst({
       where: {
         OR: [
           { whatsappJid: remoteJid },
@@ -168,6 +168,27 @@ export class BotGateway {
         family: true,
       },
     });
+
+    // Jika tidak ditemukan di User, periksa tabel BotWhitelist (platform WHATSAPP)
+    if (!user) {
+      const whitelistEntry = await prisma.botWhitelist.findFirst({
+        where: {
+          platform: 'WHATSAPP',
+          identifier: { contains: phoneNumber.slice(-10) },
+        },
+        include: {
+          family: {
+            include: {
+              users: true,
+            },
+          },
+        },
+      });
+
+      if (whitelistEntry && whitelistEntry.family.users.length > 0) {
+        user = whitelistEntry.family.users[0] as any;
+      }
+    }
 
     // JIKA TIDAK ADA DI WHITELIST -> DROP PESAN SECARA DIAM-DIAM (SILENT DROP)
     if (!user) {
