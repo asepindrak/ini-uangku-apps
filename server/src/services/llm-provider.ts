@@ -43,6 +43,83 @@ export class LLMProviderService {
   }
 
   /**
+   * Test koneksi ke LLM Provider (mengukur latency dan memvalidasi credentials)
+   */
+  static async testConnection(params: {
+    provider: string;
+    apiKey?: string;
+    baseUrl?: string;
+    modelName: string;
+    familyId?: string;
+  }): Promise<{ success: boolean; latencyMs: number; message: string }> {
+    const startTime = Date.now();
+    let effectiveApiKey = params.apiKey;
+
+    // Jika apiKey ter-mask atau kosong, ambil dari config tersimpan di database atau env
+    if (!effectiveApiKey || effectiveApiKey.startsWith('••••••••')) {
+      if (params.familyId) {
+        const saved = await prisma.llmConfig.findUnique({ where: { familyId: params.familyId } });
+        effectiveApiKey = saved?.apiKey || (params.provider === 'gemini' ? process.env.GEMINI_API_KEY : '');
+      } else {
+        effectiveApiKey = params.provider === 'gemini' ? process.env.GEMINI_API_KEY : '';
+      }
+    }
+
+    if (!effectiveApiKey && params.provider !== 'custom') {
+      return {
+        success: false,
+        latencyMs: 0,
+        message: 'API Key belum diisi. Masukkan API Key terlebih dahulu.',
+      };
+    }
+
+    const testPrompt = 'Tes koneksi sistem finansial Ini Uangku. Balas singkat dalam 3 kata: "Koneksi Berhasil".';
+
+    try {
+      if (params.provider === 'gemini') {
+        const genAI = new GoogleGenerativeAI(effectiveApiKey || '');
+        const model = genAI.getGenerativeModel({ model: params.modelName || 'gemini-2.0-flash' });
+        const res = await model.generateContent(testPrompt);
+        const reply = res.response.text().trim();
+        const latencyMs = Date.now() - startTime;
+        return {
+          success: true,
+          latencyMs,
+          message: reply || 'Koneksi Berhasil',
+        };
+      } else {
+        // OpenAI / Claude / Custom OpenAI-compatible
+        const openai = new OpenAI({
+          apiKey: effectiveApiKey || 'dummy-key',
+          baseURL: params.baseUrl || undefined,
+        });
+
+        const res = await openai.chat.completions.create({
+          model: params.modelName || 'gpt-4o-mini',
+          messages: [{ role: 'user', content: testPrompt }],
+          max_tokens: 30,
+        });
+
+        const reply = res.choices[0]?.message?.content?.trim() || 'Koneksi Berhasil';
+        const latencyMs = Date.now() - startTime;
+        return {
+          success: true,
+          latencyMs,
+          message: reply,
+        };
+      }
+    } catch (err: any) {
+      const latencyMs = Date.now() - startTime;
+      const errorMsg = err?.message || String(err);
+      return {
+        success: false,
+        latencyMs,
+        message: errorMsg,
+      };
+    }
+  }
+
+  /**
    * Ekstraksi transaksi dari foto struk, tulisan tangan kertas, voice note, atau pesan teks
    */
   static async extractTransaction(options: LLMPayloadOptions): Promise<ExtractedTransaction> {

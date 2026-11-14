@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '../db.js';
+import { LLMProviderService } from '../services/llm-provider.js';
 
 export async function llmRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', fastify.authenticate);
@@ -55,5 +56,21 @@ export async function llmRoutes(fastify: FastifyInstance) {
       activeProvider: updated.activeProvider,
       modelName: updated.modelName,
     };
+  });
+
+  // Test LLM Connection
+  fastify.post('/test', async (request) => {
+    const { familyId } = (request as any).user;
+    const { activeProvider, apiKey, baseUrl, modelName } = request.body as any;
+
+    const result = await LLMProviderService.testConnection({
+      provider: activeProvider || 'gemini',
+      apiKey,
+      baseUrl,
+      modelName,
+      familyId,
+    });
+
+    return result;
   });
 }

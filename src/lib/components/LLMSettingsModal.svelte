@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '../api';
-  import { X, Sparkles, Check, Save, Server, Key, Cpu } from 'lucide-svelte';
+  import { X, Sparkles, Check, Save, Server, Key, Cpu, Zap, Loader2, CheckCircle2, AlertCircle } from 'lucide-svelte';
 
   export let isOpen: boolean = false;
   export let onClose: () => void;
@@ -12,8 +12,10 @@
   let modelName = 'gemini-2.0-flash';
   let temperature = 0.2;
   let loading = false;
+  let testing = false;
   let successMsg = '';
   let errorMsg = '';
+  let testResult: { success: boolean; latencyMs: number; message: string } | null = null;
 
   const providerDefaults: Record<string, { model: string; base?: string; placeholder: string }> = {
     gemini: { model: 'gemini-2.0-flash', placeholder: 'AIzaSy...' },
@@ -26,6 +28,7 @@
 
   $: if (isOpen) {
     loadConfig();
+    testResult = null;
   }
 
   async function loadConfig() {
@@ -47,6 +50,30 @@
       baseUrl = providerDefaults[prov].base!;
     } else {
       baseUrl = '';
+    }
+    testResult = null;
+  }
+
+  async function handleTestConnection() {
+    testing = true;
+    testResult = null;
+    errorMsg = '';
+    try {
+      const res = await api.testLLMConnection({
+        activeProvider,
+        apiKey: apiKey || undefined,
+        baseUrl: baseUrl || undefined,
+        modelName,
+      });
+      testResult = res;
+    } catch (err: any) {
+      testResult = {
+        success: false,
+        latencyMs: 0,
+        message: err.message || 'Koneksi gagal atau server tidak merespons.',
+      };
+    } finally {
+      testing = false;
     }
   }
 
@@ -93,10 +120,53 @@
 
       <div class="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
         {#if successMsg}
-          <div class="p-3 rounded-2xl bg-emerald-50 text-emerald-700 text-xs font-semibold">{successMsg}</div>
+          <div class="p-3 rounded-2xl bg-emerald-50 text-emerald-700 text-xs font-semibold flex items-center gap-2">
+            <CheckCircle2 class="w-4 h-4 flex-shrink-0" />
+            <span>{successMsg}</span>
+          </div>
         {/if}
         {#if errorMsg}
-          <div class="p-3 rounded-2xl bg-red-50 text-red-600 text-xs font-semibold">{errorMsg}</div>
+          <div class="p-3 rounded-2xl bg-red-50 text-red-600 text-xs font-semibold flex items-center gap-2">
+            <AlertCircle class="w-4 h-4 flex-shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+        {/if}
+
+        <!-- Test Result Banner -->
+        {#if testResult}
+          {#if testResult.success}
+            <div class="p-4 rounded-2xl bg-emerald-50/90 border border-emerald-200 text-emerald-800 text-xs space-y-1 shadow-xs animate-in fade-in">
+              <div class="flex items-center justify-between font-bold">
+                <span class="flex items-center gap-1.5">
+                  <CheckCircle2 class="w-4 h-4 text-emerald-600" />
+                  Koneksi Berhasil!
+                </span>
+                <span class="px-2 py-0.5 rounded-full bg-emerald-200/80 text-emerald-800 text-[10px] font-mono">
+                  ⚡ {testResult.latencyMs} ms
+                </span>
+              </div>
+              <p class="text-emerald-700/90 text-[11px] pt-0.5">
+                Respon Model: <span class="font-mono bg-white/70 px-1.5 py-0.5 rounded">"{testResult.message}"</span>
+              </p>
+            </div>
+          {:else}
+            <div class="p-4 rounded-2xl bg-red-50/90 border border-red-200 text-red-800 text-xs space-y-1 shadow-xs animate-in fade-in">
+              <div class="flex items-center justify-between font-bold">
+                <span class="flex items-center gap-1.5">
+                  <AlertCircle class="w-4 h-4 text-red-600" />
+                  Koneksi Gagal
+                </span>
+                {#if testResult.latencyMs > 0}
+                  <span class="px-2 py-0.5 rounded-full bg-red-200/80 text-red-800 text-[10px] font-mono">
+                    {testResult.latencyMs} ms
+                  </span>
+                {/if}
+              </div>
+              <p class="text-red-700/90 text-[11px] font-mono whitespace-pre-wrap break-all pt-0.5">
+                {testResult.message}
+              </p>
+            </div>
+          {/if}
         {/if}
 
         <!-- Provider Buttons -->
@@ -162,14 +232,38 @@
           <p class="text-[11px] text-brand-indigo/50 mt-1">Kosongkan jika ingin menggunakan kunci default server.</p>
         </div>
 
-        <button
-          on:click={handleSave}
-          disabled={loading}
-          class="w-full py-3 rounded-2xl bg-gradient-to-r from-brand-peach via-brand-butter to-brand-sky text-brand-indigo text-xs font-extrabold shadow-sm hover:scale-[1.01] transition disabled:opacity-50 mt-2 flex items-center justify-center gap-2"
-        >
-          <Save class="w-4 h-4" />
-          {loading ? 'Menyimpan...' : 'Simpan Konfigurasi AI'}
-        </button>
+        <!-- Action Buttons: Test Connection & Save -->
+        <div class="pt-2 flex flex-col sm:flex-row items-center gap-2.5">
+          <button
+            type="button"
+            on:click={handleTestConnection}
+            disabled={testing || loading}
+            class="w-full sm:w-1/2 py-3 px-4 rounded-2xl bg-white hover:bg-brand-sky-light/80 border border-brand-sky/60 text-brand-indigo text-xs font-bold shadow-xs hover:shadow transition disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {#if testing}
+              <Loader2 class="w-4 h-4 animate-spin text-brand-peach-dark" />
+              Menguji Koneksi...
+            {:else}
+              <Zap class="w-4 h-4 text-amber-500" />
+              Test Koneksi
+            {/if}
+          </button>
+
+          <button
+            type="button"
+            on:click={handleSave}
+            disabled={loading || testing}
+            class="w-full sm:w-1/2 py-3 px-4 rounded-2xl bg-gradient-to-r from-brand-peach via-brand-butter to-brand-sky text-brand-indigo text-xs font-extrabold shadow-sm hover:scale-[1.01] active:scale-[0.99] transition disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {#if loading}
+              <Loader2 class="w-4 h-4 animate-spin" />
+              Menyimpan...
+            {:else}
+              <Save class="w-4 h-4" />
+              Simpan Konfigurasi
+            {/if}
+          </button>
+        </div>
       </div>
     </div>
   </div>

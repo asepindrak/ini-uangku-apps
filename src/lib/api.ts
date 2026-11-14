@@ -1,5 +1,5 @@
 const DEFAULT_SERVER_URL = import.meta.env.DEV
-  ? 'http://localhost:3000'
+  ? 'https://iniuangku.raydrop.web.id'
   : 'https://iniuangku.raydrop.web.id';
 
 export function getServerUrl(): string {
@@ -84,4 +84,5 @@ export const api = {
   restartWhatsApp: () => request<any>('/api/bot/restart-whatsapp', { method: 'POST' }),
   getLLMConfig: () => request<any>('/api/llm/config'),
   updateLLMConfig: (data: any) => request<any>('/api/llm/config', { method: 'PUT', body: JSON.stringify(data) }),
+  testLLMConnection: (data: any) => request<any>('/api/llm/test', { method: 'POST', body: JSON.stringify(data) }),
 };
