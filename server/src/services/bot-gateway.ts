@@ -13,6 +13,7 @@ import fs from 'fs';
 import { prisma } from '../db.js';
 import { LLMProviderService } from './llm-provider.js';
 import { ApprovalEngine } from './approval-engine.js';
+import { FinancialReportsService } from './financial-reports.js';
 import { ActionType, InputSource, TransactionType } from '@prisma/client';
 
 export class BotGateway {
@@ -162,6 +163,44 @@ export class BotGateway {
         await this.sendWhatsAppMessage(remoteJid, replyMsg);
         return;
       }
+    }
+
+    // 2.5 Quick Commands Finansial (/saldo, /hariini, /kemarin, /bulanini, /sinkingfund, /tagihan, /help)
+    const trimmedLower = textContent.trim().toLowerCase();
+    if (trimmedLower === '/saldo' || trimmedLower === 'saldo') {
+      const report = await FinancialReportsService.getSaldoReport(familyId);
+      await this.sendWhatsAppMessage(remoteJid, report);
+      return;
+    }
+    if (trimmedLower === '/hariini' || trimmedLower === 'hari ini' || trimmedLower === '/hari_ini') {
+      const report = await FinancialReportsService.getHariIniReport(familyId);
+      await this.sendWhatsAppMessage(remoteJid, report);
+      return;
+    }
+    if (trimmedLower === '/kemarin' || trimmedLower === 'kemarin') {
+      const report = await FinancialReportsService.getKemarinReport(familyId);
+      await this.sendWhatsAppMessage(remoteJid, report);
+      return;
+    }
+    if (trimmedLower === '/bulanini' || trimmedLower === 'bulan ini' || trimmedLower === '/bulan_ini') {
+      const report = await FinancialReportsService.getBulanIniReport(familyId);
+      await this.sendWhatsAppMessage(remoteJid, report);
+      return;
+    }
+    if (trimmedLower === '/sinkingfund' || trimmedLower === 'sinking fund' || trimmedLower === '/tabungan' || trimmedLower === 'tabungan') {
+      const report = await FinancialReportsService.getSinkingFundReport(familyId);
+      await this.sendWhatsAppMessage(remoteJid, report);
+      return;
+    }
+    if (trimmedLower === '/tagihan' || trimmedLower === 'tagihan' || trimmedLower === '/bills') {
+      const report = await FinancialReportsService.getTagihanReport(familyId);
+      await this.sendWhatsAppMessage(remoteJid, report);
+      return;
+    }
+    if (trimmedLower === '/help' || trimmedLower === '/bantuan' || trimmedLower === 'bantuan' || trimmedLower === 'help' || trimmedLower === '/start') {
+      const report = FinancialReportsService.getHelpMessage();
+      await this.sendWhatsAppMessage(remoteJid, report);
+      return;
     }
 
     // 3. Konteks Waktu & Agregasi Temporal Finansial Keluarga

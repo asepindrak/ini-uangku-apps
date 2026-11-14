@@ -1,8 +1,9 @@
-import { Bot } from 'grammy';
+import { Bot, InlineKeyboard } from 'grammy';
 import { prisma } from '../db.js';
 import { LLMProviderService } from './llm-provider.js';
 import { ApprovalEngine } from './approval-engine.js';
-import { ActionType, InputSource, TransactionType } from '@prisma/client';
+import { FinancialReportsService } from './financial-reports.js';
+import { ActionType, ActionStatus, InputSource, TransactionType } from '@prisma/client';
 
 export class TelegramManager {
   public static globalBot: Bot | null = null;
@@ -65,15 +66,8 @@ export class TelegramManager {
       this.globalBotUsername = me.username;
       this.isGlobalBotRunning = true;
 
-      // 1. Command /start
-      bot.command('start', async (ctx) => {
-        await this.handleStartCommand(ctx, null);
-      });
-
-      // 2. Incoming Messages
-      bot.on(['message:text', 'message:photo', 'message:voice'], async (ctx) => {
-        await this.handleIncomingMessage(null, ctx, token.trim());
-      });
+      // Pasang handler command, callback query tombol, dan pesan masuk
+      await this.setupBotHandlers(bot, null, token.trim());
 
       // Jalankan polling bot global
       bot.start({
@@ -85,6 +79,116 @@ export class TelegramManager {
       this.isGlobalBotRunning = false;
       console.error('❌ Gagal menginisialisasi Global Telegram Bot:', err.message);
     }
+  }
+
+  /**
+   * Pasang semua command finansial, callback query button inline, dan message listener
+   */
+  private static async setupBotHandlers(bot: Bot, targetFamilyId: string | null, token: string) {
+    // 1. Daftarkan menu autocomplete command resmi Telegram
+    bot.api
+      .setMyCommands([
+        { command: 'saldo', description: 'Cek saldo seluruh dompet kas & bank' },
+        { command: 'hariini', description: 'Rekap transaksi pengeluaran hari ini' },
+        { command: 'kemarin', description: 'Rekap transaksi kemarin' },
+        { command: 'bulanini', description: 'Rekap pengeluaran & budget bulan ini' },
+        { command: 'sinkingfund', description: 'Cek pos tabungan dana siaga' },
+        { command: 'tagihan', description: 'Cek jadwal tagihan rutin bulanan' },
+        { command: 'help', description: 'Panduan lengkap cara pakai bot' },
+      ])
+      .catch((e) => console.warn('Gagal setMyCommands:', e.message));
+
+    // 2. /start
+    bot.command('start', async (ctx) => {
+      await this.handleStartCommand(ctx, targetFamilyId);
+    });
+
+    // 3. /saldo
+    bot.command('saldo', async (ctx) => {
+      const user = await this.identifyUser(ctx, targetFamilyId);
+      if (!user) return;
+      const res = await FinancialReportsService.getSaldoReport(user.familyId);
+      await ctx.reply(res, { parse_mode: 'Markdown' });
+    });
+
+    // 4. /hariini
+    bot.command('hariini', async (ctx) => {
+      const user = await this.identifyUser(ctx, targetFamilyId);
+      if (!user) return;
+      const res = await FinancialReportsService.getHariIniReport(user.familyId);
+      await ctx.reply(res, { parse_mode: 'Markdown' });
+    });
+
+    // 5. /kemarin
+    bot.command('kemarin', async (ctx) => {
+      const user = await this.identifyUser(ctx, targetFamilyId);
+      if (!user) return;
+      const res = await FinancialReportsService.getKemarinReport(user.familyId);
+      await ctx.reply(res, { parse_mode: 'Markdown' });
+    });
+
+    // 6. /bulanini
+    bot.command('bulanini', async (ctx) => {
+      const user = await this.identifyUser(ctx, targetFamilyId);
+      if (!user) return;
+      const res = await FinancialReportsService.getBulanIniReport(user.familyId);
+      await ctx.reply(res, { parse_mode: 'Markdown' });
+    });
+
+    // 7. /sinkingfund
+    bot.command('sinkingfund', async (ctx) => {
+      const user = await this.identifyUser(ctx, targetFamilyId);
+      if (!user) return;
+      const res = await FinancialReportsService.getSinkingFundReport(user.familyId);
+      await ctx.reply(res, { parse_mode: 'Markdown' });
+    });
+
+    // 8. /tagihan
+    bot.command('tagihan', async (ctx) => {
+      const user = await this.identifyUser(ctx, targetFamilyId);
+      if (!user) return;
+      const res = await FinancialReportsService.getTagihanReport(user.familyId);
+      await ctx.reply(res, { parse_mode: 'Markdown' });
+    });
+
+    // 9. /help & /bantuan
+    bot.command(['help', 'bantuan'], async (ctx) => {
+      const res = FinancialReportsService.getHelpMessage(this.globalBotUsername || undefined);
+      await ctx.reply(res, { parse_mode: 'Markdown' });
+    });
+
+    // 10. Callback Query Handler (Interaktif Tombol Inline "Setuju" & "Batal")
+    bot.on('callback_query:data', async (ctx) => {
+      const data = ctx.callbackQuery.data;
+      const [action, actionId] = data.split(':');
+
+      if (action === 'approve' || action === 'reject') {
+        const isApprove = action === 'approve';
+        await ctx.answerCallbackQuery({
+          text: isApprove ? 'Menyetujui aksi...' : 'Membatalkan...',
+        });
+
+        const pending = await prisma.pendingAction.findUnique({
+          where: { id: actionId },
+        });
+
+        if (!pending || pending.status !== ActionStatus.PENDING_APPROVAL) {
+          await ctx.editMessageText('⚠️ Draf ini sudah pernah diproses atau kedaluwarsa.');
+          return;
+        }
+
+        const response = await ApprovalEngine.processResponse(pending.userId, isApprove ? 'ya' : 'batal');
+        let replyMsg = response.message;
+        if (response.alert) replyMsg += `\n\n${response.alert}`;
+
+        await ctx.editMessageText(replyMsg, { parse_mode: 'Markdown' });
+      }
+    });
+
+    // 11. Incoming Messages (Text, Photo, Voice)
+    bot.on(['message:text', 'message:photo', 'message:voice'], async (ctx) => {
+      await this.handleIncomingMessage(targetFamilyId, ctx, token);
+    });
   }
 
   /**
@@ -128,13 +232,7 @@ export class TelegramManager {
       },
     });
 
-    bot.command('start', async (ctx) => {
-      await this.handleStartCommand(ctx, familyId);
-    });
-
-    bot.on(['message:text', 'message:photo', 'message:voice'], async (ctx) => {
-      await this.handleIncomingMessage(familyId, ctx, botToken.trim());
-    });
+    await this.setupBotHandlers(bot, familyId, botToken.trim());
 
     bot.start({
       onStart: () => {
@@ -144,6 +242,47 @@ export class TelegramManager {
 
     this.activeBots.set(familyId, bot);
     return { username: botUsername };
+  }
+
+  /**
+   * Helper Identifikasi User Telegram
+   */
+  private static async identifyUser(ctx: any, targetFamilyId: string | null) {
+    const chatId = String(ctx.from?.id);
+    let user = await prisma.user.findFirst({
+      where: {
+        telegramChatId: chatId,
+        ...(targetFamilyId ? { familyId: targetFamilyId } : {}),
+      },
+      include: { family: true },
+    });
+
+    if (!user) {
+      const whitelist = await prisma.botWhitelist.findFirst({
+        where: {
+          platform: 'TELEGRAM',
+          identifier: chatId,
+          ...(targetFamilyId ? { familyId: targetFamilyId } : {}),
+        },
+        include: { family: { include: { users: true } } },
+      });
+
+      if (whitelist && whitelist.family.users.length > 0) {
+        user = whitelist.family.users[0] as any;
+        (user as any).family = whitelist.family;
+      }
+    }
+
+    if (!user) {
+      await ctx.reply(
+        `⚠️ ID Telegram Anda (\`${chatId}\`) belum terdaftar di keluarga mana pun di aplikasi Ini Uangku.\n` +
+        `Ketik /start untuk melihat petunjuk pendaftaran.`,
+        { parse_mode: 'Markdown' }
+      );
+      return null;
+    }
+
+    return user;
   }
 
   /**
@@ -192,12 +331,15 @@ export class TelegramManager {
     await ctx.reply(
       `Halo ${user.name || ctx.from?.first_name}! 🎀\n\n` +
       `Selamat datang di Bot Finansial Keluarga *"${user.family.name}"*.\n\n` +
-      `Bot siap membantu mencatat keuangan keluarga Anda:\n` +
-      `• Ketik pesan belanja (e.g. *"Beli beras 75rb bayar pake BCA"*)\n` +
-      `• Kirim foto nota / struk belanjaan\n` +
-      `• Kirim foto catatan coretan belanja di kertas\n` +
-      `• Kirim rekaman suara (Voice Note)\n\n` +
-      `Setiap draf yang terdeteksi akan diajukan ke Anda terlebih dahulu untuk disetujui (*"Ya"* / *"Setuju"*)!`,
+      `*Perintah Cepat Tersedia:*\n` +
+      `• /saldo - Cek saldo seluruh dompet kas & bank\n` +
+      `• /hariini - Rekap transaksi hari ini\n` +
+      `• /kemarin - Rekap transaksi kemarin\n` +
+      `• /bulanini - Rekap pengeluaran & budget bulan ini\n` +
+      `• /sinkingfund - Cek pos tabungan dana siaga\n` +
+      `• /tagihan - Cek jadwal tagihan rutin\n` +
+      `• /help - Bantuan & panduan lengkap\n\n` +
+      `*Anda juga bisa langsung chat:* ketik belanjaan, kirim foto nota/struk belanja, atau kirim voice note!`,
       { parse_mode: 'Markdown' }
     );
   }
@@ -219,7 +361,6 @@ export class TelegramManager {
 
     let effectiveFamily = user?.family;
 
-    // Jika tidak ditemukan di tabel User, cek di tabel BotWhitelist
     if (!user) {
       const whitelistEntry = await prisma.botWhitelist.findFirst({
         where: {
@@ -240,7 +381,6 @@ export class TelegramManager {
       }
     }
 
-    // JIKA TIDAK ADA DI WHITELIST KELUARGA MANA PUN -> Beritahu petunjuk pendaftaran
     if (!user || !effectiveFamily) {
       await ctx.reply(
         `⚠️ ID Telegram Anda (\`${chatId}\`) belum terdaftar di aplikasi Ini Uangku.\n` +
@@ -253,7 +393,7 @@ export class TelegramManager {
     const familyId = effectiveFamily.id;
     const textContent = ctx.message?.text || ctx.message?.caption || '';
 
-    // 2. Cek apakah pesan adalah persetujuan untuk Draf yang sedang aktif
+    // 2. Cek apakah pesan adalah persetujuan teks ("Ya" / "Batal") untuk Draf yang sedang aktif
     const activePending = await ApprovalEngine.getActivePendingAction(user.id);
     if (activePending && textContent) {
       const response = await ApprovalEngine.processResponse(user.id, textContent);
@@ -314,31 +454,26 @@ export class TelegramManager {
           user: { select: { name: true } },
         },
       }),
-      // Hari ini
       prisma.transaction.groupBy({
         by: ['type'],
         where: { familyId, transactionDate: { gte: startOfToday } },
         _sum: { amount: true },
       }),
-      // Kemarin
       prisma.transaction.groupBy({
         by: ['type'],
         where: { familyId, transactionDate: { gte: startOfYesterday, lt: startOfToday } },
         _sum: { amount: true },
       }),
-      // Bulan ini
       prisma.transaction.groupBy({
         by: ['type'],
         where: { familyId, transactionDate: { gte: startOfThisMonth } },
         _sum: { amount: true },
       }),
-      // Bulan lalu
       prisma.transaction.groupBy({
         by: ['type'],
         where: { familyId, transactionDate: { gte: startOfLastMonth, lte: endOfLastMonth } },
         _sum: { amount: true },
       }),
-      // Tahun ini
       prisma.transaction.groupBy({
         by: ['type'],
         where: { familyId, transactionDate: { gte: startOfThisYear } },
@@ -402,7 +537,7 @@ export class TelegramManager {
     if (ctx.message?.photo && ctx.message.photo.length > 0) {
       await ctx.reply('🔍 Sedang membaca foto nota / tulisan tangan Anda dengan AI...');
       try {
-        const photo = ctx.message.photo[ctx.message.photo.length - 1]; // Resolusi tertinggi
+        const photo = ctx.message.photo[ctx.message.photo.length - 1];
         const file = await ctx.api.getFile(photo.file_id);
         if (file.file_path) {
           const fileUrl = `https://api.telegram.org/file/bot${botToken}/${file.file_path}`;
@@ -476,22 +611,44 @@ export class TelegramManager {
       sinkingFunds: formattedSinking,
     });
 
-    // 7. Jika berupa Pertanyaan / Konsultasi Finansial (Read / Analisis Waktu)
+    // 7. Jika berupa Pertanyaan / Konsultasi Finansial
     if (processed.intent === 'FINANCIAL_CONSULTATION' && processed.replyText) {
       await ctx.reply(processed.replyText, { parse_mode: 'Markdown' });
       return;
     }
 
-    // 8. Cabang berdasarkan Action Type Manajemen Keuangan:
+    // 8. Helper pembuatan draf dengan tombol InlineKeyboard interaktif
+    const sendDraftWithButtons = async (
+      actionType: ActionType,
+      payload: any,
+      summaryText: string
+    ) => {
+      const pending = await ApprovalEngine.createPendingAction(
+        familyId,
+        user.id,
+        actionType,
+        payload,
+        summaryText
+      );
+
+      const keyboard = new InlineKeyboard()
+        .text('✅ Setuju ("Ya")', `approve:${pending.id}`)
+        .text('❌ Batalkan', `reject:${pending.id}`);
+
+      await ctx.reply(summaryText, {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard,
+      });
+    };
+
+    // 9. Cabang Action Types Manajemen Keuangan:
     if (processed.actionType === 'UPDATE_TRANSACTION') {
       const summaryText =
         `📋 *Draf Pembaruan (Edit) Transaksi:*\n` +
         `${processed.summaryMessage || `• Ubah: ${processed.targetDescription}\n• Nominal Baru: Rp ${(processed.newAmount || 0).toLocaleString('id-ID')}`}\n\n` +
-        `👉 *Balas "Ya" untuk menyetujui pembaruan transaksi ini, atau ketik koreksi Anda.*`;
+        `👉 *Ketuk tombol di bawah atau balas "Ya" untuk menyetujui:*`;
 
-      await ApprovalEngine.createPendingAction(
-        familyId,
-        user.id,
+      await sendDraftWithButtons(
         ActionType.UPDATE_TRANSACTION,
         {
           targetTransactionId: processed.targetTransactionId,
@@ -504,7 +661,6 @@ export class TelegramManager {
         },
         summaryText
       );
-      await ctx.reply(summaryText, { parse_mode: 'Markdown' });
       return;
     }
 
@@ -512,11 +668,9 @@ export class TelegramManager {
       const summaryText =
         `📋 *Draf Penghapusan Transaksi:*\n` +
         `${processed.summaryMessage || `• Hapus Transaksi: ${processed.targetDescription}`}\n\n` +
-        `👉 *Balas "Ya" untuk menyetujui penghapusan transaksi ini dan memulihkan saldo dompet.*`;
+        `👉 *Ketuk tombol di bawah atau balas "Ya" untuk menyetujui:*`;
 
-      await ApprovalEngine.createPendingAction(
-        familyId,
-        user.id,
+      await sendDraftWithButtons(
         ActionType.DELETE_TRANSACTION,
         {
           targetTransactionId: processed.targetTransactionId,
@@ -524,7 +678,6 @@ export class TelegramManager {
         },
         summaryText
       );
-      await ctx.reply(summaryText, { parse_mode: 'Markdown' });
       return;
     }
 
@@ -534,11 +687,9 @@ export class TelegramManager {
         `• *Nama Dompet*: ${processed.walletName}\n` +
         `• *Tipe*: ${processed.walletType || 'BANK'}\n` +
         `• *Saldo Awal*: Rp ${(processed.initialBalance || 0).toLocaleString('id-ID')}\n\n` +
-        `👉 *Balas "Ya" untuk menyetujui, atau ketik koreksi Anda.*`;
+        `👉 *Ketuk tombol di bawah atau balas "Ya" untuk menyetujui:*`;
 
-      await ApprovalEngine.createPendingAction(
-        familyId,
-        user.id,
+      await sendDraftWithButtons(
         ActionType.CREATE_WALLET,
         {
           name: processed.walletName,
@@ -547,7 +698,6 @@ export class TelegramManager {
         },
         summaryText
       );
-      await ctx.reply(summaryText, { parse_mode: 'Markdown' });
       return;
     }
 
@@ -561,11 +711,9 @@ export class TelegramManager {
         `• *Dari Dompet*: ${srcWallet?.name}\n` +
         `• *Ke Dompet*: ${tgtWallet?.name}\n` +
         `• *Nominal*: Rp ${numAmount.toLocaleString('id-ID')}\n\n` +
-        `👉 *Balas "Ya" untuk menyetujui transfer ini, atau ketik koreksi Anda.*`;
+        `👉 *Ketuk tombol di bawah atau balas "Ya" untuk menyetujui transfer ini:*`;
 
-      await ApprovalEngine.createPendingAction(
-        familyId,
-        user.id,
+      await sendDraftWithButtons(
         ActionType.TRANSFER_WALLET,
         {
           sourceWalletId: srcWallet.id,
@@ -576,7 +724,6 @@ export class TelegramManager {
         },
         summaryText
       );
-      await ctx.reply(summaryText, { parse_mode: 'Markdown' });
       return;
     }
 
@@ -590,11 +737,9 @@ export class TelegramManager {
         `• *Kategori*: ${catName}\n` +
         `• *Batas Anggaran Bulanan*: Rp ${monthlyBudget.toLocaleString('id-ID')}\n` +
         `• *Peringatan Guardrail*: 80% kuota\n\n` +
-        `👉 *Balas "Ya" untuk menyetujui anggaran ini, atau ketik koreksi Anda.*`;
+        `👉 *Ketuk tombol di bawah atau balas "Ya" untuk menyetujui anggaran ini:*`;
 
-      await ApprovalEngine.createPendingAction(
-        familyId,
-        user.id,
+      await sendDraftWithButtons(
         ActionType.SET_BUDGET,
         {
           categoryId: targetCat?.id,
@@ -604,7 +749,6 @@ export class TelegramManager {
         },
         summaryText
       );
-      await ctx.reply(summaryText, { parse_mode: 'Markdown' });
       return;
     }
 
@@ -616,11 +760,9 @@ export class TelegramManager {
         `• *Target Dana*: Rp ${(processed.targetAmount || 0).toLocaleString('id-ID')}\n` +
         `• *Alokasi Bulanan*: Rp ${(processed.monthlyAlloc || 0).toLocaleString('id-ID')}\n` +
         `• *Sumber Dana*: ${defaultWallet?.name || 'Utama'}\n\n` +
-        `👉 *Balas "Ya" untuk menyetujui pembuatan pos tabungan ini.*`;
+        `👉 *Ketuk tombol di bawah atau balas "Ya" untuk menyetujui pembuatan pos tabungan ini:*`;
 
-      await ApprovalEngine.createPendingAction(
-        familyId,
-        user.id,
+      await sendDraftWithButtons(
         ActionType.CREATE_SINKING_FUND,
         {
           name: processed.sinkingFundName,
@@ -630,7 +772,6 @@ export class TelegramManager {
         },
         summaryText
       );
-      await ctx.reply(summaryText, { parse_mode: 'Markdown' });
       return;
     }
 
@@ -643,11 +784,9 @@ export class TelegramManager {
         `• *Nominal*: Rp ${(processed.amount || 0).toLocaleString('id-ID')}\n` +
         `• *Jatuh Tempo*: Tanggal ${processed.dueDayOfMonth || 1} setiap bulan\n` +
         `• *Sumber Dompet*: ${defaultWallet?.name || 'Utama'}\n\n` +
-        `👉 *Balas "Ya" untuk menyetujui jadwal tagihan ini.*`;
+        `👉 *Ketuk tombol di bawah atau balas "Ya" untuk menyetujui jadwal tagihan ini:*`;
 
-      await ApprovalEngine.createPendingAction(
-        familyId,
-        user.id,
+      await sendDraftWithButtons(
         ActionType.CREATE_RECURRING_BILL,
         {
           name: processed.billName,
@@ -658,11 +797,10 @@ export class TelegramManager {
         },
         summaryText
       );
-      await ctx.reply(summaryText, { parse_mode: 'Markdown' });
       return;
     }
 
-    // 9. Jika berupa Pencatatan Transaksi Baru (CREATE_TRANSACTION)
+    // 10. Jika berupa Pencatatan Transaksi Baru (CREATE_TRANSACTION)
     if (!processed.amount || processed.amount <= 0) {
       await ctx.reply('Mohon maaf, nominal pengeluaran belum terbaca dengan jelas. Bisa disebutkan kembali keperluan dan nominalnya?');
       return;
@@ -691,7 +829,7 @@ export class TelegramManager {
         `• *Tanggal Transaksi*: ${dateDisplay}\n` +
         `• *Dompet*: ${targetWallet?.name || 'Utama'}\n` +
         `• *Kategori*: ${targetCategory?.name || 'Umum'}\n\n` +
-        `👉 *Balas "Ya" untuk menyetujui dan mencatat tiap item satu-per-satu ke jurnal, atau ketik koreksi Anda.*`;
+        `👉 *Ketuk tombol di bawah atau balas "Ya" untuk mencatat tiap item ke jurnal:*`;
     } else {
       summaryText =
         `📋 *Draf Pencatatan Ditemukan:*\n` +
@@ -700,7 +838,7 @@ export class TelegramManager {
         `• *Tanggal Transaksi*: ${dateDisplay}\n` +
         `• *Dompet*: ${targetWallet?.name || 'Utama'}\n` +
         `• *Kategori*: ${targetCategory?.name || 'Umum'}\n\n` +
-        `👉 *Balas "Ya" untuk menyetujui, atau ketik koreksi Anda.*`;
+        `👉 *Ketuk tombol di bawah atau balas "Ya" untuk menyetujui:*`;
     }
 
     const proposedPayload = {
@@ -714,15 +852,11 @@ export class TelegramManager {
       items: processed.items,
     };
 
-    await ApprovalEngine.createPendingAction(
-      familyId,
-      user.id,
+    await sendDraftWithButtons(
       ActionType.CREATE_TRANSACTION,
       proposedPayload,
       summaryText
     );
-
-    await ctx.reply(summaryText, { parse_mode: 'Markdown' });
   }
 
   /**
