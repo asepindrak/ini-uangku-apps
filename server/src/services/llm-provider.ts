@@ -9,8 +9,23 @@ export interface LLMPayloadOptions {
   audioBase64?: string;
   audioMimeType?: string;
   rawText?: string;
-  contextWallets: Array<{ id: string; name: string; type: string }>;
-  contextCategories: Array<{ id: string; name: string }>;
+  contextWallets: Array<{ id: string; name: string; type: string; balance?: number | any }>;
+  contextCategories: Array<{ id: string; name: string; monthlyBudget?: number | any; alertThreshold?: number | any }>;
+  recentTransactions?: Array<{
+    description: string;
+    amount: number;
+    type: string;
+    date: string;
+    walletName: string;
+    categoryName?: string;
+    userName?: string;
+  }>;
+  monthlySummary?: {
+    totalExpense: number;
+    totalIncome: number;
+    netBalance: number;
+  };
+  sinkingFunds?: Array<{ name: string; currentAmount: number; targetAmount: number }>;
 }
 
 export interface ExtractedTransaction {
@@ -22,6 +37,18 @@ export interface ExtractedTransaction {
   items?: Array<{ name: string; price: number; qty?: number }>;
   summaryMessage: string;
   confidence: number;
+}
+
+export interface ProcessedMessageResult {
+  intent: 'TRANSACTION_RECORD' | 'FINANCIAL_CONSULTATION';
+  amount?: number;
+  description?: string;
+  type?: 'EXPENSE' | 'INCOME';
+  walletId?: string;
+  categoryId?: string;
+  items?: Array<{ name: string; price: number; qty?: number }>;
+  summaryMessage?: string;
+  replyText?: string;
 }
 
 export class LLMProviderService {
@@ -55,7 +82,6 @@ export class LLMProviderService {
     const startTime = Date.now();
     let effectiveApiKey = params.apiKey;
 
-    // Jika apiKey ter-mask atau kosong, ambil dari config tersimpan di database atau env
     if (!effectiveApiKey || effectiveApiKey.startsWith('••••••••')) {
       if (params.familyId) {
         const saved = await prisma.llmConfig.findUnique({ where: { familyId: params.familyId } });
@@ -88,7 +114,6 @@ export class LLMProviderService {
           message: reply || 'Koneksi Berhasil',
         };
       } else {
-        // OpenAI / Claude / Custom OpenAI-compatible
         const openai = new OpenAI({
           apiKey: effectiveApiKey || 'dummy-key',
           baseURL: params.baseUrl || undefined,
@@ -120,61 +145,82 @@ export class LLMProviderService {
   }
 
   /**
-   * Ekstraksi transaksi dari foto struk, tulisan tangan kertas, voice note, atau pesan teks
+   * Proses pesan masuk cerdas: Membedakan Pencatatan Transaksi vs Konsultasi / Pertanyaan Keuangan
    */
-  static async extractTransaction(options: LLMPayloadOptions): Promise<ExtractedTransaction> {
+  static async processMessage(options: LLMPayloadOptions): Promise<ProcessedMessageResult> {
     const config = await this.getConfig(options.familyId);
 
-    const systemPrompt = `Kamu adalah Asisten Finansial Pintar Keluarga "Ini Uangku".
-Tugasmu adalah menganalisa bukti transaksi keuangan berupa:
-1. Foto nota / struk belanja resmi (Indomaret, Alfamart, restoran, pom bensin, toko, dll).
-2. Foto kotretan / catatan tulisan tangan di kertas (misal belanja sayur di pasar).
-3. Transkripsi pesan suara / voice note (rekaman anggota keluarga sambil menyetir atau belanja).
-4. Pesan teks bebas dari WhatsApp atau Telegram.
+    const systemPrompt = `Kamu adalah Asisten & Konsultan Keuangan Cerdas Keluarga "Ini Uangku" (Smart Multimodal Family Financial Planner & Agent).
 
-Daftar Dompet Tersedia:
+TUGAS UTAMA:
+Analisa pesan/media dari pengguna dan tentukan intensi:
+1. "TRANSACTION_RECORD":
+   - Terpicu saat pengguna ingin MENCATAT transaksi pengeluaran/pemasukan baru, ATAU mengirim foto nota/struk belanjaan, ATAU mengirim foto coretan tangan belanja di kertas, ATAU mengirim rekaman suara (voice note) transaksi.
+   - Contoh: "Beli sate 35rb pake Gopay", "Barusan isi bensin 50rb", "Gaji bulan ini masuk 8jt", atau foto struk kasir Indomaret.
+   - Ekstrak total nominal uang akhir (integer IDR), deskripsi, tipe (EXPENSE/INCOME), dompet, dan kategori.
+
+2. "FINANCIAL_CONSULTATION":
+   - Terpicu saat pengguna BERTANYA, meminta rekap/riwayat pengeluaran/pemasukan, cek saldo dompet, cek sisa budget, minta analisis apakah boros, meminta saran hemat, sapaan santai, atau konsultasi keuangan.
+   - Contoh: "pengeluaran ada apa aja?", "hari ini habis berapa ya?", "sisa uang di BCA tinggal berapa?", "bulan ini saya boros nggak?", "pos belanja mana yang paling banyak?", "rekap pengeluaran minggu ini", "halo", "terima kasih".
+   - Jawablah dengan sangat cerdas, ramah, dan solutif layaknya Konsultan / Perencana Keuangan Profesional (Financial Planner) keluarga berdasarkan DATA KEUANGAN KELUARGA TERBARU di bawah.
+   - Gunakan format markdown tebal, bullet points, dan format mata uang Rupiah yang rapi (contoh: Rp 50.000).
+
+DATA KEUANGAN KELUARGA TERBARU (GUNAKAN DATA INI SECARA AKURAT UNTUK MENJAWAB):
+- Daftar Dompet & Saldo:
 ${JSON.stringify(options.contextWallets, null, 2)}
 
-Daftar Kategori Tersedia:
+- Daftar Kategori & Budget Bulanan:
 ${JSON.stringify(options.contextCategories, null, 2)}
 
-Aturan Penting:
-- Pilih dompet yang paling cocok dari daftar dompet di atas (gunakan id dompet). Jika tidak jelas, gunakan dompet pertama sebagai default.
-- Pilih kategori yang paling cocok dari daftar kategori di atas (gunakan id kategori).
-- Jika ada banyak item dalam struk/kertas belanja, tulis rincian item (nama barang, perkiraan harga satuan, kuantitas).
-- Ekstrak total nominal uang akhir (dalam integer IDR tanpa desimal).
-- Buat kalimat ringkasan yang santun, jelas, dan ramah dalam bahasa Indonesia untuk diajukan kepada pengguna sebelum dicatat.
+- Ringkasan Finansial Bulan Ini:
+${JSON.stringify(options.monthlySummary || { totalExpense: 0, totalIncome: 0, netBalance: 0 }, null, 2)}
 
-Kamu WAJIB mengembalikan respon HANYA dalam format JSON valid tanpa format markdown (jangan pakai backticks \`\`\`json):
+- Transaksi Terkini Keluarga:
+${JSON.stringify(options.recentTransactions || [], null, 2)}
+
+- Pos Dana Siaga (Sinking Funds):
+${JSON.stringify(options.sinkingFunds || [], null, 2)}
+
+FORMAT RESPON WAJIB:
+Kembalikan HANYA format JSON valid tanpa tanda markdown (tanpa backticks \`\`\`json):
+
+Jika TRANSACTION_RECORD:
 {
-  "amount": 145000,
-  "description": "Belanja Kebutuhan Dapur di Indomaret",
+  "intent": "TRANSACTION_RECORD",
+  "amount": 35000,
+  "description": "Beli Sate Ayam",
   "type": "EXPENSE",
   "walletId": "id-dompet-terpilih",
   "categoryId": "id-kategori-terpilih",
   "items": [
-    { "name": "Minyak Goreng 2L", "price": 35000, "qty": 1 },
-    { "name": "Susu UHT", "price": 65000, "qty": 1 }
+    { "name": "Sate Ayam", "price": 35000, "qty": 1 }
   ],
-  "summaryMessage": "• Toko: Indomaret\\n• Total: Rp 145.000\\n• Rincian: Minyak Goreng, Susu UHT\\n• Dompet: BCA Ayah\\n• Kategori: Kebutuhan Dapur",
-  "confidence": 0.95
+  "summaryMessage": "• Keperluan: Beli Sate Ayam\\n• Total: Rp 35.000\\n• Dompet: BCA\\n• Kategori: Makanan & Minuman"
+}
+
+Jika FINANCIAL_CONSULTATION:
+{
+  "intent": "FINANCIAL_CONSULTATION",
+  "replyText": "Teks jawaban lengkap, ramah, dan solutif sebagai konsultan keuangan keluarga (sertakan rincian transaksi jika ditanya, evaluasi anggaran, dan tips praktis)."
 }`;
 
     if (config.provider === 'gemini') {
-      return this.callGemini(config, systemPrompt, options);
+      return this.callGeminiProcess(config, systemPrompt, options);
     } else {
-      // OpenAI atau Custom OpenAI-Compatible (Ollama, DeepSeek, Groq, OpenRouter)
-      return this.callOpenAICompatible(config, systemPrompt, options);
+      return this.callOpenAIProcess(config, systemPrompt, options);
     }
   }
 
   /**
-   * Pemanggilan ke Google Gemini API (Multimodal)
+   * Pemanggilan ke Google Gemini API untuk Process Message
    */
-  private static async callGemini(config: any, systemPrompt: string, options: LLMPayloadOptions): Promise<ExtractedTransaction> {
+  private static async callGeminiProcess(config: any, systemPrompt: string, options: LLMPayloadOptions): Promise<ProcessedMessageResult> {
     const apiKey = config.apiKey || process.env.GEMINI_API_KEY || '';
     if (!apiKey) {
-      return this.createFallbackTransaction(options, 'Kunci API Gemini belum diatur di menu pengaturan.');
+      return {
+        intent: 'FINANCIAL_CONSULTATION',
+        replyText: 'Kunci API Gemini belum diatur di menu pengaturan aplikasi.',
+      };
     }
 
     try {
@@ -194,7 +240,7 @@ Kamu WAJIB mengembalikan respon HANYA dalam format JSON valid tanpa format markd
             data: options.imageBase64,
           },
         });
-        contents.push({ text: 'Tolong baca dan analisa foto struk / kertas tulisan tangan di atas.' });
+        contents.push({ text: 'Tolong baca dan analisa foto struk / nota / coretan kertas tulisan tangan di atas.' });
       }
 
       if (options.audioBase64) {
@@ -204,22 +250,25 @@ Kamu WAJIB mengembalikan respon HANYA dalam format JSON valid tanpa format markd
             data: options.audioBase64,
           },
         });
-        contents.push({ text: 'Tolong dengarkan dan transkripsikan rekaman voice note transaksi keuangan di atas.' });
+        contents.push({ text: 'Tolong dengarkan dan proses rekaman suara (voice note) di atas.' });
       }
 
       const response = await model.generateContent(contents);
       const responseText = response.response.text();
-      return this.parseJSONResponse(responseText, options);
+      return this.parseProcessedJSON(responseText, options);
     } catch (error: any) {
-      console.error('Error calling Gemini API:', error);
-      return this.createFallbackTransaction(options, `Gagal memproses dengan Gemini: ${error?.message || error}`);
+      console.error('Error calling Gemini Process:', error);
+      return {
+        intent: 'FINANCIAL_CONSULTATION',
+        replyText: `Maaf, terjadi kendala saat menganalisa dengan AI: ${error?.message || error}`,
+      };
     }
   }
 
   /**
-   * Pemanggilan ke OpenAI & Custom OpenAI-Compatible Endpoint
+   * Pemanggilan ke OpenAI / Custom OpenAI-Compatible
    */
-  private static async callOpenAICompatible(config: any, systemPrompt: string, options: LLMPayloadOptions): Promise<ExtractedTransaction> {
+  private static async callOpenAIProcess(config: any, systemPrompt: string, options: LLMPayloadOptions): Promise<ProcessedMessageResult> {
     try {
       const openai = new OpenAI({
         apiKey: config.apiKey || process.env.OPENAI_API_KEY || 'dummy',
@@ -239,15 +288,13 @@ Kamu WAJIB mengembalikan respon HANYA dalam format JSON valid tanpa format markd
         const mime = options.imageMimeType || 'image/jpeg';
         userContent.push({
           type: 'image_url',
-          image_url: {
-            url: `data:${mime};base64,${options.imageBase64}`,
-          },
+          image_url: { url: `data:${mime};base64,${options.imageBase64}` },
         });
-        userContent.push({ type: 'text', text: 'Tolong baca struk/kertas tulisan tangan ini.' });
+        userContent.push({ type: 'text', text: 'Tolong baca foto struk / coretan kertas ini.' });
       }
 
       if (userContent.length === 0) {
-        userContent.push({ type: 'text', text: 'Tolong ekstrak transaksi keuangan.' });
+        userContent.push({ type: 'text', text: 'Tolong bantu konsultasi keuangan.' });
       }
 
       messages.push({ role: 'user', content: userContent });
@@ -259,19 +306,21 @@ Kamu WAJIB mengembalikan respon HANYA dalam format JSON valid tanpa format markd
       });
 
       const text = response.choices[0]?.message?.content || '{}';
-      return this.parseJSONResponse(text, options);
+      return this.parseProcessedJSON(text, options);
     } catch (error: any) {
       console.error('Error calling OpenAI Compatible API:', error);
-      return this.createFallbackTransaction(options, `Gagal memproses LLM: ${error?.message || error}`);
+      return {
+        intent: 'FINANCIAL_CONSULTATION',
+        replyText: `Maaf, terjadi kesalahan pada layanan AI: ${error?.message || error}`,
+      };
     }
   }
 
   /**
    * Parser JSON dari output LLM
    */
-  private static parseJSONResponse(rawText: string, options: LLMPayloadOptions): ExtractedTransaction {
+  private static parseProcessedJSON(rawText: string, options: LLMPayloadOptions): ProcessedMessageResult {
     try {
-      // Bersihkan kemungkinan format markdown ```json
       const cleaned = rawText
         .replace(/^```json\s*/i, '')
         .replace(/^```\s*/i, '')
@@ -280,10 +329,18 @@ Kamu WAJIB mengembalikan respon HANYA dalam format JSON valid tanpa format markd
 
       const parsed = JSON.parse(cleaned);
 
+      if (parsed.intent === 'FINANCIAL_CONSULTATION' || parsed.replyText) {
+        return {
+          intent: 'FINANCIAL_CONSULTATION',
+          replyText: parsed.replyText || 'Ada yang bisa saya bantu terkait keuangan keluarga Anda hari ini?',
+        };
+      }
+
       const defaultWalletId = options.contextWallets[0]?.id || '';
       const defaultCategoryId = options.contextCategories[0]?.id;
 
       return {
+        intent: 'TRANSACTION_RECORD',
         amount: Math.abs(Number(parsed.amount) || 0),
         description: parsed.description || 'Pengeluaran Rumah Tangga',
         type: parsed.type === 'INCOME' ? 'INCOME' : 'EXPENSE',
@@ -291,30 +348,33 @@ Kamu WAJIB mengembalikan respon HANYA dalam format JSON valid tanpa format markd
         categoryId: parsed.categoryId || defaultCategoryId,
         items: Array.isArray(parsed.items) ? parsed.items : [],
         summaryMessage: parsed.summaryMessage || `Nominal: Rp ${Number(parsed.amount).toLocaleString('id-ID')}`,
-        confidence: Number(parsed.confidence) || 0.85,
       };
     } catch (e) {
-      console.warn('Gagal mem-parsing JSON dari respon LLM, membuat fallback:', rawText);
-      return this.createFallbackTransaction(options, rawText);
+      // Jika parsing JSON gagal, perlakukan sebagai respon konsultasi teks
+      return {
+        intent: 'FINANCIAL_CONSULTATION',
+        replyText: rawText.replace(/```[a-z]*|```/gi, '').trim(),
+      };
     }
   }
 
   /**
-   * Fallback aman jika LLM gagal membaca
+   * Backward compatibility
    */
-  private static createFallbackTransaction(options: LLMPayloadOptions, fallbackNote: string): ExtractedTransaction {
-    const defaultWallet = options.contextWallets[0];
-    const defaultCategory = options.contextCategories[0];
+  static async extractTransaction(options: LLMPayloadOptions): Promise<ExtractedTransaction> {
+    const res = await this.processMessage(options);
+    const defaultWalletId = options.contextWallets[0]?.id || '';
+    const defaultCategoryId = options.contextCategories[0]?.id;
 
     return {
-      amount: 0,
-      description: options.rawText ? `Transaksi: ${options.rawText.substring(0, 40)}` : 'Pengeluaran (Perlu konfirmasi manual)',
-      type: 'EXPENSE',
-      walletId: defaultWallet?.id || '',
-      categoryId: defaultCategory?.id,
-      items: [],
-      summaryMessage: `⚠️ AI belum dapat membaca nominal dengan pasti (${fallbackNote}).`,
-      confidence: 0.2,
+      amount: res.amount || 0,
+      description: res.description || 'Pengeluaran',
+      type: res.type || 'EXPENSE',
+      walletId: res.walletId || defaultWalletId,
+      categoryId: res.categoryId || defaultCategoryId,
+      items: res.items || [],
+      summaryMessage: res.summaryMessage || '',
+      confidence: 0.9,
     };
   }
 }

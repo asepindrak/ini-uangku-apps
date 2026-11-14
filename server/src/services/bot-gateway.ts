@@ -164,15 +164,62 @@ export class BotGateway {
       }
     }
 
-    // 3. Ambil context Dompet & Kategori keluarga
-    const wallets = await prisma.wallet.findMany({
-      where: { familyId },
-      select: { id: true, name: true, type: true },
-    });
-    const categories = await prisma.category.findMany({
-      where: { familyId },
-      select: { id: true, name: true },
-    });
+    // 3. Ambil context lengkap finansial keluarga (Dompet, Kategori, Transaksi Terkini, Ringkasan Bulanan)
+    const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+
+    const [wallets, categories, recentTransactions, monthlyAgg, sinkingFunds] = await Promise.all([
+      prisma.wallet.findMany({
+        where: { familyId },
+        select: { id: true, name: true, type: true, balance: true },
+      }),
+      prisma.category.findMany({
+        where: { familyId },
+        select: { id: true, name: true, monthlyBudget: true, alertThreshold: true },
+      }),
+      prisma.transaction.findMany({
+        where: { familyId },
+        orderBy: { transactionDate: 'desc' },
+        take: 20,
+        include: {
+          wallet: { select: { name: true } },
+          category: { select: { name: true } },
+          user: { select: { name: true } },
+        },
+      }),
+      prisma.transaction.groupBy({
+        by: ['type'],
+        where: { familyId, transactionDate: { gte: startOfMonth } },
+        _sum: { amount: true },
+      }),
+      prisma.sinkingFund.findMany({
+        where: { familyId, isActive: true },
+        select: { name: true, currentAmount: true, targetAmount: true },
+      }),
+    ]);
+
+    let totalExpense = 0;
+    let totalIncome = 0;
+    for (const g of monthlyAgg) {
+      const sum = Number(g._sum.amount) || 0;
+      if (g.type === 'EXPENSE') totalExpense += sum;
+      if (g.type === 'INCOME') totalIncome += sum;
+    }
+
+    const formattedRecent = recentTransactions.map((t) => ({
+      description: t.description,
+      amount: Number(t.amount),
+      type: t.type,
+      date: t.transactionDate.toISOString().split('T')[0],
+      walletName: t.wallet?.name || 'Dompet',
+      categoryName: t.category?.name || 'Umum',
+      userName: t.user?.name || 'Anggota',
+    }));
+
+    const formattedSinking = sinkingFunds.map((s) => ({
+      name: s.name,
+      currentAmount: Number(s.currentAmount),
+      targetAmount: Number(s.targetAmount),
+    }));
 
     let imageBase64: string | undefined = undefined;
     let audioBase64: string | undefined = undefined;
@@ -198,41 +245,71 @@ export class BotGateway {
 
     if (!textContent && !imageBase64 && !audioBase64) return;
 
-    // 5. Ekstraksi dengan AI Agent
-    const extracted = await LLMProviderService.extractTransaction({
+    // 5. Analisa Cerdas dengan AI (Deteksi Intensi: Konsultasi Keuangan vs Catat Transaksi)
+    const processed = await LLMProviderService.processMessage({
       familyId,
       rawText: textContent,
       imageBase64,
       imageMimeType: 'image/jpeg',
       audioBase64,
       audioMimeType: 'audio/ogg',
-      contextWallets: wallets,
-      contextCategories: categories,
+      contextWallets: wallets.map((w) => ({
+        id: w.id,
+        name: w.name,
+        type: w.type,
+        balance: Number(w.balance),
+      })),
+      contextCategories: categories.map((c) => ({
+        id: c.id,
+        name: c.name,
+        monthlyBudget: c.monthlyBudget ? Number(c.monthlyBudget) : undefined,
+        alertThreshold: c.alertThreshold ? Number(c.alertThreshold) : undefined,
+      })),
+      recentTransactions: formattedRecent,
+      monthlySummary: {
+        totalExpense,
+        totalIncome,
+        netBalance: totalIncome - totalExpense,
+      },
+      sinkingFunds: formattedSinking,
     });
 
-    if (extracted.amount <= 0) {
+    // 6. Jika berupa Pertanyaan / Konsultasi Finansial
+    if (processed.intent === 'FINANCIAL_CONSULTATION' && processed.replyText) {
+      await this.sendWhatsAppMessage(remoteJid, processed.replyText);
+      return;
+    }
+
+    // 7. Jika berupa Pencatatan Transaksi Baru
+    if (!processed.amount || processed.amount <= 0) {
       await this.sendWhatsAppMessage(
         remoteJid,
-        'Mohon maaf, saya belum menemukan nominal pengeluaran yang jelas. Bisa sebutkan nominal dan keperluan belanjanya?'
+        'Mohon maaf, nominal pengeluaran belum terbaca dengan jelas. Bisa disebutkan kembali keperluan dan nominalnya?'
       );
       return;
     }
 
-    // 6. Buat PendingAction & Minta Persetujuan (Human-in-the-Loop)
+    // 8. Buat PendingAction & Minta Persetujuan (Human-in-the-Loop)
     const proposedPayload = {
-      walletId: extracted.walletId,
-      categoryId: extracted.categoryId,
-      amount: extracted.amount,
-      description: extracted.description,
-      type: extracted.type === 'INCOME' ? TransactionType.INCOME : TransactionType.EXPENSE,
+      walletId: processed.walletId || wallets[0]?.id || '',
+      categoryId: processed.categoryId || categories[0]?.id,
+      amount: processed.amount,
+      description: processed.description || 'Pengeluaran Rumah Tangga',
+      type: processed.type === 'INCOME' ? TransactionType.INCOME : TransactionType.EXPENSE,
       inputSource: imageBase64 ? InputSource.WHATSAPP_IMAGE_RECEIPT : audioBase64 ? InputSource.WHATSAPP_VOICE_NOTE : InputSource.WHATSAPP_TEXT,
-      items: extracted.items,
+      items: processed.items,
     };
 
-    const targetWallet = wallets.find((w) => w.id === extracted.walletId);
-    const targetCategory = categories.find((c) => c.id === extracted.categoryId);
+    const targetWallet = wallets.find((w) => w.id === processed.walletId) || wallets[0];
+    const targetCategory = categories.find((c) => c.id === processed.categoryId) || categories[0];
 
-    const summaryText = `📋 *Draf Pencatatan Ditemukan:*\n• *Keperluan*: ${extracted.description}\n• *Total*: Rp ${extracted.amount.toLocaleString('id-ID')}\n• *Dompet*: ${targetWallet?.name || 'Utama'}\n• *Kategori*: ${targetCategory?.name || 'Umum'}\n\n👉 *Balas "Ya" untuk menyetujui, atau ketik koreksi Anda.*`;
+    const summaryText =
+      `📋 *Draf Pencatatan Ditemukan:*\n` +
+      `• *Keperluan*: ${processed.description}\n` +
+      `• *Total*: Rp ${processed.amount.toLocaleString('id-ID')}\n` +
+      `• *Dompet*: ${targetWallet?.name || 'Utama'}\n` +
+      `• *Kategori*: ${targetCategory?.name || 'Umum'}\n\n` +
+      `👉 *Balas "Ya" untuk menyetujui, atau ketik koreksi Anda.*`;
 
     await ApprovalEngine.createPendingAction(
       familyId,
