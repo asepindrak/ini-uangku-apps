@@ -3,6 +3,7 @@ import { prisma } from '../db.js';
 import { ActionType, TransactionType } from '@prisma/client';
 import { ApprovalEngine } from './approval-engine.js';
 import { BotGateway } from './bot-gateway.js';
+import { TelegramManager } from './telegram-manager.js';
 
 export class SchedulerService {
   static init() {
@@ -78,7 +79,7 @@ export class SchedulerService {
         await BotGateway.sendWhatsAppMessage(manager.whatsappJid, summaryText);
       }
       if (manager.telegramChatId) {
-        await BotGateway.sendTelegramMessage(manager.telegramChatId, summaryText);
+        await TelegramManager.sendMessage(bill.familyId, manager.telegramChatId, summaryText);
       }
     }
   }
@@ -123,7 +124,7 @@ export class SchedulerService {
         await BotGateway.sendWhatsAppMessage(manager.whatsappJid, summaryText);
       }
       if (manager.telegramChatId) {
-        await BotGateway.sendTelegramMessage(manager.telegramChatId, summaryText);
+        await TelegramManager.sendMessage(fund.familyId, manager.telegramChatId, summaryText);
       }
     }
   }
@@ -178,7 +179,7 @@ export class SchedulerService {
         await BotGateway.sendWhatsAppMessage(manager.whatsappJid, message);
       }
       if (manager.telegramChatId) {
-        await BotGateway.sendTelegramMessage(manager.telegramChatId, message);
+        await TelegramManager.sendMessage(family.id, manager.telegramChatId, message);
       }
     }
   }

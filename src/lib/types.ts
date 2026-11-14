@@ -108,7 +108,36 @@ export interface BotStatus {
   whatsappConnected: boolean;
   whatsappQr?: string;
   telegramConnected: boolean;
+  familyTelegramConfigured?: boolean;
+  familyTelegramUsername?: string | null;
+  isFamilyBotRunning?: boolean;
   whitelistCount: number;
+}
+
+export interface TelegramWhitelistItem {
+  id: string;
+  familyId: string;
+  platform: string;
+  identifier: string;
+  name: string;
+  canRecord: boolean;
+  canViewReports: boolean;
+  createdAt: string;
+}
+
+export interface TelegramConfigResponse {
+  configured: boolean;
+  token: string;
+  username: string | null;
+  isRunning: boolean;
+  familyName?: string;
+  whitelists: TelegramWhitelistItem[];
+  memberUsers: {
+    id: string;
+    name: string;
+    telegramChatId: string;
+    role: string;
+  }[];
 }
 
 export interface LLMConfig {

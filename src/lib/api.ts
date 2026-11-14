@@ -82,6 +82,11 @@ export const api = {
   // Bot & LLM
   getBotStatus: () => request<any>('/api/bot/status'),
   restartWhatsApp: () => request<any>('/api/bot/restart-whatsapp', { method: 'POST' }),
+  getTelegramConfig: () => request<any>('/api/bot/telegram-config'),
+  updateTelegramConfig: (data: { botToken: string }) => request<any>('/api/bot/telegram-config', { method: 'PUT', body: JSON.stringify(data) }),
+  deleteTelegramConfig: () => request<any>('/api/bot/telegram-config', { method: 'DELETE' }),
+  addTelegramWhitelist: (data: { identifier: string; name: string }) => request<any>('/api/bot/telegram-whitelist', { method: 'POST', body: JSON.stringify(data) }),
+  deleteTelegramWhitelist: (id: string) => request<any>(`/api/bot/telegram-whitelist/${id}`, { method: 'DELETE' }),
   getLLMConfig: () => request<any>('/api/llm/config'),
   updateLLMConfig: (data: any) => request<any>('/api/llm/config', { method: 'PUT', body: JSON.stringify(data) }),
   testLLMConnection: (data: any) => request<any>('/api/llm/test', { method: 'POST', body: JSON.stringify(data) }),

@@ -13,6 +13,7 @@ import { assetDebtRoutes } from './routes/assets-debts.js';
 import { botRoutes } from './routes/bot.js';
 import { llmRoutes } from './routes/llm.js';
 import { BotGateway } from './services/bot-gateway.js';
+import { TelegramManager } from './services/telegram-manager.js';
 import { SchedulerService } from './services/scheduler.js';
 
 const fastify = Fastify({
@@ -72,8 +73,9 @@ async function start() {
   try {
     await connectDB();
     
-    // Inisialisasi Bot Gateway (WhatsApp Baileys & Telegram) & Scheduler
+    // Inisialisasi Bot Gateway (WhatsApp Baileys & Telegram Mandiri) & Scheduler
     BotGateway.init().catch((err) => console.error('Bot init error:', err));
+    TelegramManager.initAll().catch((err) => console.error('TelegramManager init error:', err));
     SchedulerService.init();
 
     await fastify.listen({ port: PORT, host: HOST });
