@@ -39,7 +39,7 @@ pub async fn check_app_update(app: AppHandle) -> Result<UpdateCheckResult, Strin
         .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
 
     let res = client
-        .get("https://api.github.com/repos/asepindrak/ini-uangku/releases/latest")
+        .get("https://api.github.com/repos/asepindrak/ini-uangku-apps/releases/latest")
         .send()
         .await
         .map_err(|e| format!("Unable to reach GitHub update server: {e}"))?;
@@ -71,7 +71,7 @@ pub async fn check_app_update(app: AppHandle) -> Result<UpdateCheckResult, Strin
         .to_string();
     let html_url = release_val["html_url"]
         .as_str()
-        .unwrap_or("https://github.com/asepindrak/ini-uangku/releases")
+        .unwrap_or("https://github.com/asepindrak/ini-uangku-apps/releases")
         .to_string();
 
     let clean_latest = tag_name.trim_start_matches('v').trim_start_matches('V').to_string();

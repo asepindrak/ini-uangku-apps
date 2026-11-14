@@ -16,7 +16,7 @@ jobs:
       matrix:
         include:
           - platform: 'windows-latest'
-            args: '--bundles msi'
+            args: '--bundles nsis,msi'
           - platform: 'ubuntu-22.04'
             args: '--bundles deb,appimage'
           - platform: 'macos-latest'
@@ -61,7 +61,7 @@ jobs:
           releaseName: 'Ini Uangku v__VERSION__'
           releaseBody: |
             <p align="center">
-              <img src="https://raw.githubusercontent.com/asepindrak/ini-uangku/main/logo.png" alt="Ini Uangku Logo" width="180" />
+              <img src="https://raw.githubusercontent.com/asepindrak/ini-uangku-apps/main/logo.png" alt="Ini Uangku Logo" width="180" />
             </p>
 
             <h2 align="center">Ini Uangku v__VERSION__ Release 🎀</h2>
@@ -76,7 +76,7 @@ jobs:
 
             | Operating System | Package | Architecture | Description |
             | :--- | :---: | :---: | :--- |
-            | **Windows** | `.msi` | x64 (64-bit) | `Ini_Uangku___VERSION___x64_en-US.msi` — Official Windows Installer |
+            | **Windows** | `.exe`, `.msi` | x64 (64-bit) | `Ini_Uangku___VERSION___x64-setup.exe` & `.msi` — Official Windows Installers |
             | **macOS** | `.dmg` | Universal | `Ini_Uangku___VERSION___universal.dmg` — Native Universal DMG for Apple Silicon (M1-M4) & Intel |
             | **Linux (Universal)** | `.AppImage` | x64 (amd64) | `Ini_Uangku___VERSION___amd64.AppImage` — Portable standalone binary |
             | **Linux (Debian/Ubuntu)** | `.deb` | x64 (amd64) | `Ini_Uangku___VERSION___amd64.deb` — Debian/Ubuntu package |
@@ -86,7 +86,10 @@ jobs:
 
             ### 🚀 Highlights & Features
             - **Human-in-the-Loop AI Bookkeeping:** AI bot scans receipts and handwritten notes with approval before journaling.
-            - **WhatsApp (Baileys) & Telegram Bot:** Integrated family messaging bot with strict whitelist security.
+            - **WhatsApp (Baileys) & Telegram Bot:** Integrated family messaging bot with interactive Inline Buttons and instant quick commands (`/saldo`, `/hariini`, `/kemarin`, `/bulanini`, `/sinkingfund`, `/tagihan`).
+            - **Multi-LLM Provider Engine:** Custom selection of AI providers (Google Gemini, OpenAI, Anthropic Claude, Local/Custom LLM) with latency test.
+            - **Granular Item-Level Journaling:** Automatically decomposes grouped receipts into individual journal lines.
+            - **Multi-Timezone & Auto-Detection:** Full timezone awareness (WIB, WITA, WIT) with 1-click device auto-detection.
             - **Multi-Wallet per Family Member:** Individual and shared family wallets.
             - **Sinking Funds & Auto Recurring Bills:** Automated reminders and budget guardrails.
             - **Pastel Glassmorphism UI:** Aesthetic design tailored for modern families with 1-click Privacy Blur mode.

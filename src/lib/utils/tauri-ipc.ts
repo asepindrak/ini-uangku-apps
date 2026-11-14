@@ -11,7 +11,7 @@ export async function checkAppUpdate(): Promise<UpdateInfo> {
       release_title: 'Ini Uangku v1.0.0',
       release_notes: 'Mode Web / Preview',
       release_date: new Date().toISOString(),
-      html_url: 'https://github.com/asepindrak/ini-uangku/releases',
+      html_url: 'https://github.com/asepindrak/ini-uangku-apps/releases',
     };
   }
 
