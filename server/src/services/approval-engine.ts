@@ -130,50 +130,247 @@ export class ApprovalEngine {
     let budgetAlertMessage: string | undefined = undefined;
 
     if (pending.actionType === ActionType.CREATE_TRANSACTION) {
-      const { walletId, categoryId, amount, description, type, inputSource, rawMediaUrl, aiRawResponse } = payload;
+      const { walletId, categoryId, amount, description, type, inputSource, rawMediaUrl, aiRawResponse, items } = payload;
       const numAmount = Number(amount);
 
-      // Jalankan Prisma Interactive Transaction
+      // JIKA PENGGUNA MERINCI BANYAK ITEM DENGAN HARGA MASING-MASING:
+      // SIMPAN SATU-SATU KE JURNAL SEBAGAI TRANSAKSI TERPISAH
+      if (Array.isArray(items) && items.length > 1) {
+        const itemRows: Array<{ name: string; total: number }> = [];
+        let totalCalculated = 0;
+
+        await prisma.$transaction(async (tx) => {
+          for (const item of items) {
+            const itemPrice = Math.abs(Number(item.price) || 0);
+            const itemQty = Number(item.qty) || 1;
+            const itemTotal = itemPrice * itemQty;
+            if (itemTotal <= 0) continue;
+
+            totalCalculated += itemTotal;
+            const itemDesc = item.name ? (itemQty > 1 ? `${item.name} (${itemQty}x)` : item.name) : description;
+
+            await tx.transaction.create({
+              data: {
+                familyId: pending.familyId,
+                walletId,
+                categoryId: item.categoryId || categoryId || null,
+                userId: pending.userId,
+                type: type || TransactionType.EXPENSE,
+                amount: itemTotal,
+                description: itemDesc,
+                inputSource: inputSource || InputSource.WHATSAPP_TEXT,
+                rawMediaUrl: rawMediaUrl || null,
+                aiRawResponse: aiRawResponse || null,
+                pendingActionId: pending.id,
+              },
+            });
+
+            itemRows.push({ name: itemDesc, total: itemTotal });
+          }
+
+          // Update Saldo Wallet dengan akumulasi total seluruh item
+          const effectiveTotal = totalCalculated > 0 ? totalCalculated : numAmount;
+          const wallet = await tx.wallet.findUnique({ where: { id: walletId } });
+          if (wallet) {
+            const currentBal = Number(wallet.balance);
+            const newBal = (type === TransactionType.INCOME) ? currentBal + effectiveTotal : currentBal - effectiveTotal;
+            await tx.wallet.update({
+              where: { id: walletId },
+              data: { balance: newBal },
+            });
+          }
+        });
+
+        if (categoryId && (type === TransactionType.EXPENSE || !type)) {
+          budgetAlertMessage = await this.checkBudgetGuardrail(pending.familyId, categoryId);
+        }
+
+        const updatedWallet = await prisma.wallet.findUnique({ where: { id: walletId } });
+        const formattedBalance = updatedWallet ? `Rp ${Number(updatedWallet.balance).toLocaleString('id-ID')}` : '';
+
+        const lines = itemRows.map((it) => `• ${it.name}: Rp ${it.total.toLocaleString('id-ID')}`);
+        successMessage =
+          `✅ *Pencatatan Berhasil Disetujui!*\n` +
+          `Telah dicatat ${itemRows.length} transaksi satu-per-satu ke jurnal:\n` +
+          lines.slice(0, 10).join('\n') +
+          (lines.length > 10 ? `\n...dan ${lines.length - 10} item lainnya` : '') +
+          `\n\n• *Total*: Rp ${totalCalculated.toLocaleString('id-ID')}\n• *Dompet*: ${updatedWallet?.name || 'Utama'}\n• *Sisa Saldo*: ${formattedBalance}`;
+      } else {
+        // Single Item Transaction
+        await prisma.$transaction(async (tx) => {
+          await tx.transaction.create({
+            data: {
+              familyId: pending.familyId,
+              walletId,
+              categoryId: categoryId || null,
+              userId: pending.userId,
+              type: type || TransactionType.EXPENSE,
+              amount: numAmount,
+              description,
+              inputSource: inputSource || InputSource.WHATSAPP_TEXT,
+              rawMediaUrl: rawMediaUrl || null,
+              aiRawResponse: aiRawResponse || null,
+              pendingActionId: pending.id,
+            },
+          });
+
+          const wallet = await tx.wallet.findUnique({ where: { id: walletId } });
+          if (wallet) {
+            const currentBal = Number(wallet.balance);
+            const newBal = (type === TransactionType.INCOME) ? currentBal + numAmount : currentBal - numAmount;
+            await tx.wallet.update({
+              where: { id: walletId },
+              data: { balance: newBal },
+            });
+          }
+        });
+
+        if (categoryId && (type === TransactionType.EXPENSE || !type)) {
+          budgetAlertMessage = await this.checkBudgetGuardrail(pending.familyId, categoryId);
+        }
+
+        const updatedWallet = await prisma.wallet.findUnique({ where: { id: walletId } });
+        const formattedBalance = updatedWallet ? `Rp ${Number(updatedWallet.balance).toLocaleString('id-ID')}` : '';
+
+        successMessage = `✅ *Pencatatan Berhasil Disetujui!*\n• Transaksi: ${description}\n• Nominal: Rp ${numAmount.toLocaleString('id-ID')}\n• Dompet: ${updatedWallet?.name || 'Utama'}\n• Sisa Saldo: ${formattedBalance}`;
+      }
+    } else if (pending.actionType === ActionType.CREATE_WALLET) {
+      const { name, type = 'BANK', initialBalance = 0 } = payload;
+      const newWallet = await prisma.wallet.create({
+        data: {
+          familyId: pending.familyId,
+          userId: pending.userId,
+          name: name.trim(),
+          type: type || 'BANK',
+          balance: Number(initialBalance) || 0,
+          isShared: true,
+        },
+      });
+
+      successMessage =
+        `🎉 *Dompet Baru Berhasil Dibuat!*\n` +
+        `• *Nama Dompet*: ${newWallet.name}\n` +
+        `• *Tipe*: ${newWallet.type}\n` +
+        `• *Saldo Awal*: Rp ${Number(newWallet.balance).toLocaleString('id-ID')}`;
+    } else if (pending.actionType === ActionType.TRANSFER_WALLET) {
+      const { sourceWalletId, targetWalletId, amount, description = 'Transfer Antar Dompet' } = payload;
+      const numAmount = Math.abs(Number(amount));
+
       await prisma.$transaction(async (tx) => {
-        // 1. Simpan Transaksi
+        const [src, tgt] = await Promise.all([
+          tx.wallet.findUnique({ where: { id: sourceWalletId } }),
+          tx.wallet.findUnique({ where: { id: targetWalletId } }),
+        ]);
+
+        if (!src || !tgt) throw new Error('Dompet asal atau tujuan tidak ditemukan.');
+
+        await tx.wallet.update({
+          where: { id: sourceWalletId },
+          data: { balance: Number(src.balance) - numAmount },
+        });
+
+        await tx.wallet.update({
+          where: { id: targetWalletId },
+          data: { balance: Number(tgt.balance) + numAmount },
+        });
+
         await tx.transaction.create({
           data: {
             familyId: pending.familyId,
-            walletId,
-            categoryId: categoryId || null,
+            walletId: sourceWalletId,
             userId: pending.userId,
-            type: type || TransactionType.EXPENSE,
+            type: TransactionType.TRANSFER,
             amount: numAmount,
-            description,
-            inputSource: inputSource || InputSource.WHATSAPP_TEXT,
-            rawMediaUrl: rawMediaUrl || null,
-            aiRawResponse: aiRawResponse || null,
+            description: `${description}: Dari ${src.name} ke ${tgt.name}`,
+            inputSource: payload.inputSource || InputSource.TELEGRAM_TEXT,
             pendingActionId: pending.id,
           },
         });
-
-        // 2. Update Saldo Wallet
-        const wallet = await tx.wallet.findUnique({ where: { id: walletId } });
-        if (wallet) {
-          const currentBal = Number(wallet.balance);
-          const newBal = (type === TransactionType.INCOME) ? currentBal + numAmount : currentBal - numAmount;
-          await tx.wallet.update({
-            where: { id: walletId },
-            data: { balance: newBal },
-          });
-        }
       });
 
-      // 3. Cek Budget Guardrails jika pengeluaran berkategori
-      if (categoryId && (payload.type === TransactionType.EXPENSE || !payload.type)) {
-        budgetAlertMessage = await this.checkBudgetGuardrail(pending.familyId, categoryId);
+      const [updatedSrc, updatedTgt] = await Promise.all([
+        prisma.wallet.findUnique({ where: { id: sourceWalletId } }),
+        prisma.wallet.findUnique({ where: { id: targetWalletId } }),
+      ]);
+
+      successMessage =
+        `💸 *Transfer Antar Dompet Berhasil!*\n` +
+        `• *Dari Dompet*: ${updatedSrc?.name} (Sisa: Rp ${Number(updatedSrc?.balance).toLocaleString('id-ID')})\n` +
+        `• *Ke Dompet*: ${updatedTgt?.name} (Saldo: Rp ${Number(updatedTgt?.balance).toLocaleString('id-ID')})\n` +
+        `• *Nominal*: Rp ${numAmount.toLocaleString('id-ID')}`;
+    } else if (pending.actionType === ActionType.SET_BUDGET) {
+      const { categoryId, categoryName, monthlyBudget, alertThreshold = 80 } = payload;
+      let cat;
+      if (categoryId) {
+        cat = await prisma.category.update({
+          where: { id: categoryId },
+          data: {
+            monthlyBudget: Number(monthlyBudget),
+            alertThreshold: Number(alertThreshold) || 80,
+          },
+        });
+      } else if (categoryName) {
+        cat = await prisma.category.create({
+          data: {
+            familyId: pending.familyId,
+            name: categoryName.trim(),
+            icon: 'tag',
+            color: '#C1ECFD',
+            type: TransactionType.EXPENSE,
+            monthlyBudget: Number(monthlyBudget),
+            alertThreshold: Number(alertThreshold) || 80,
+          },
+        });
       }
 
-      // Ambil saldo dompet terbaru untuk ditampilkan
-      const updatedWallet = await prisma.wallet.findUnique({ where: { id: walletId } });
-      const formattedBalance = updatedWallet ? new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(updatedWallet.balance)) : '';
+      successMessage =
+        `🎯 *Batas Anggaran (Budget) Berhasil Diatur!*\n` +
+        `• *Kategori*: ${cat?.name}\n` +
+        `• *Batas Bulanan*: Rp ${Number(cat?.monthlyBudget).toLocaleString('id-ID')}\n` +
+        `• *Peringatan Otomatis*: Saat mencapai ${cat?.alertThreshold || 80}% kuota`;
+    } else if (pending.actionType === ActionType.CREATE_SINKING_FUND) {
+      const { name, targetAmount, monthlyAlloc = 0, sourceWalletId } = payload;
+      const defaultWallet = await prisma.wallet.findFirst({ where: { familyId: pending.familyId } });
 
-      successMessage = `✅ *Pencatatan Berhasil Disetujui!*\n• Transaksi: ${description}\n• Nominal: ${new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(numAmount)}\n• Dompet: ${updatedWallet?.name || 'Utama'}\n• Sisa Saldo: ${formattedBalance}`;
+      const fund = await prisma.sinkingFund.create({
+        data: {
+          familyId: pending.familyId,
+          name: name.trim(),
+          targetAmount: Number(targetAmount),
+          monthlyAlloc: Number(monthlyAlloc),
+          sourceWalletId: sourceWalletId || defaultWallet?.id || '',
+          isActive: true,
+        },
+      });
+
+      successMessage =
+        `🎯 *Pos Dana Siaga (Sinking Fund) Baru Berhasil Dibuat!*\n` +
+        `• *Nama Pos*: ${fund.name}\n` +
+        `• *Target Dana*: Rp ${Number(fund.targetAmount).toLocaleString('id-ID')}\n` +
+        `• *Alokasi Tiap Bulan*: Rp ${Number(fund.monthlyAlloc).toLocaleString('id-ID')}`;
+    } else if (pending.actionType === ActionType.CREATE_RECURRING_BILL) {
+      const { name, amount, dueDayOfMonth = 1, walletId, categoryId } = payload;
+      const defaultWallet = await prisma.wallet.findFirst({ where: { familyId: pending.familyId } });
+      const defaultCat = await prisma.category.findFirst({ where: { familyId: pending.familyId } });
+
+      const bill = await prisma.recurringBill.create({
+        data: {
+          familyId: pending.familyId,
+          name: name.trim(),
+          amount: Number(amount),
+          dueDayOfMonth: Math.min(Math.max(Number(dueDayOfMonth) || 1, 1), 31),
+          walletId: walletId || defaultWallet?.id || '',
+          categoryId: categoryId || defaultCat?.id || '',
+          isActive: true,
+        },
+      });
+
+      successMessage =
+        `📅 *Jadwal Tagihan Rutin Berhasil Disimpan!*\n` +
+        `• *Tagihan*: ${bill.name}\n` +
+        `• *Nominal*: Rp ${Number(bill.amount).toLocaleString('id-ID')}\n` +
+        `• *Jatuh Tempo*: Tanggal ${bill.dueDayOfMonth} setiap bulan\n` +
+        `• *Notifikasi Otomatis*: AI akan mengingatkan pukul 07:00 pagi setiap jatuh tempo`;
     } else if (pending.actionType === ActionType.EXECUTE_RECURRING_BILL) {
       const { billId, walletId, categoryId, amount, name } = payload;
       const numAmount = Number(amount);

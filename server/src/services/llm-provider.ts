@@ -34,20 +34,47 @@ export interface ExtractedTransaction {
   type: 'EXPENSE' | 'INCOME';
   walletId: string;
   categoryId?: string;
-  items?: Array<{ name: string; price: number; qty?: number }>;
+  items?: Array<{ name: string; price: number; qty?: number; categoryId?: string }>;
   summaryMessage: string;
   confidence: number;
 }
 
 export interface ProcessedMessageResult {
   intent: 'TRANSACTION_RECORD' | 'FINANCIAL_CONSULTATION';
+  actionType?:
+    | 'CREATE_TRANSACTION'
+    | 'CREATE_WALLET'
+    | 'TRANSFER_WALLET'
+    | 'SET_BUDGET'
+    | 'CREATE_SINKING_FUND'
+    | 'CREATE_RECURRING_BILL';
+  // CREATE_TRANSACTION:
   amount?: number;
   description?: string;
   type?: 'EXPENSE' | 'INCOME';
   walletId?: string;
   categoryId?: string;
-  items?: Array<{ name: string; price: number; qty?: number }>;
+  items?: Array<{ name: string; price: number; qty?: number; categoryId?: string }>;
   summaryMessage?: string;
+  // CREATE_WALLET:
+  walletName?: string;
+  walletType?: 'BANK' | 'E_WALLET' | 'CASH' | 'INVESTMENT';
+  initialBalance?: number;
+  // TRANSFER_WALLET:
+  sourceWalletId?: string;
+  targetWalletId?: string;
+  // SET_BUDGET:
+  categoryName?: string;
+  monthlyBudget?: number;
+  alertThreshold?: number;
+  // CREATE_SINKING_FUND:
+  sinkingFundName?: string;
+  targetAmount?: number;
+  monthlyAlloc?: number;
+  // CREATE_RECURRING_BILL:
+  billName?: string;
+  dueDayOfMonth?: number;
+  // FINANCIAL_CONSULTATION:
   replyText?: string;
 }
 
@@ -145,7 +172,7 @@ export class LLMProviderService {
   }
 
   /**
-   * Proses pesan masuk cerdas: Membedakan Pencatatan Transaksi vs Konsultasi / Pertanyaan Keuangan
+   * Proses pesan masuk cerdas: Full Keuangan Management + Itemized Journal + Konsultasi
    */
   static async processMessage(options: LLMPayloadOptions): Promise<ProcessedMessageResult> {
     const config = await this.getConfig(options.familyId);
@@ -155,9 +182,27 @@ export class LLMProviderService {
 TUGAS UTAMA:
 Analisa pesan/media dari pengguna dan tentukan intensi:
 1. "TRANSACTION_RECORD":
-   - Terpicu saat pengguna ingin MENCATAT transaksi pengeluaran/pemasukan baru, ATAU mengirim foto nota/struk belanjaan, ATAU mengirim foto coretan tangan belanja di kertas, ATAU mengirim rekaman suara (voice note) transaksi.
-   - Contoh: "Beli sate 35rb pake Gopay", "Barusan isi bensin 50rb", "Gaji bulan ini masuk 8jt", atau foto struk kasir Indomaret.
-   - Ekstrak total nominal uang akhir (integer IDR), deskripsi, tipe (EXPENSE/INCOME), dompet, dan kategori.
+   Pengguna ingin melakukan aksi perubahan data keuangan keluarga (mutasi). Tentukan actionType yang tepat:
+   a. "CREATE_TRANSACTION":
+      - Mencatat pengeluaran atau pemasukan baru, foto struk, catatan kertas, atau voice note.
+      - PENTING ATURAN RINCIAN ITEM: Jika pengguna merinci beberapa barang dengan harganya masing-masing (misal: "Beli beras 70rb, telur 25rb, minyak 35rb pake BCA", atau foto struk kasir):
+        Kamu WAJIB mencantumkan setiap item ke array "items": [{"name": "Beras 5kg", "price": 70000, "qty": 1}, {"name": "Telur 1kg", "price": 25000, "qty": 1}, ...].
+        Sistem Ini Uangku akan mencatat tiap item sebagai baris jurnal terpisah di database!
+   b. "CREATE_WALLET":
+      - Perintah membuat/menambah dompet baru.
+      - Contoh: "bikin dompet baru Bank Jago saldo awal 500rb", "tambah dompet Tabungan Haji 10jt", "buat dompet cash kecil 100rb".
+   c. "TRANSFER_WALLET":
+      - Perintah memindahkan dana / transfer antar dompet keluarga.
+      - Contoh: "transfer dari BCA ke Gopay 200rb", "pindahin uang dari Mandiri ke Tunai 500rb".
+   d. "SET_BUDGET":
+      - Perintah mengatur atau memperbarui batas anggaran kategori.
+      - Contoh: "atur budget makan 2 juta sebulan", "set budget bensin 400rb".
+   e. "CREATE_SINKING_FUND":
+      - Perintah membuat pos tabungan target / dana siaga baru.
+      - Contoh: "buat sinking fund Renovasi Rumah target 15 juta alokasi 1 juta per bulan dari BCA".
+   f. "CREATE_RECURRING_BILL":
+      - Perintah menjadwalkan tagihan rutin bulanan baru.
+      - Contoh: "jadwalkan tagihan wifi 350rb tiap tanggal 10 dari Mandiri".
 
 2. "FINANCIAL_CONSULTATION":
    - Terpicu saat pengguna BERTANYA, meminta rekap/riwayat pengeluaran/pemasukan, cek saldo dompet, cek sisa budget, minta analisis apakah boros, meminta saran hemat, sapaan santai, atau konsultasi keuangan.
@@ -165,7 +210,7 @@ Analisa pesan/media dari pengguna dan tentukan intensi:
    - Jawablah dengan sangat cerdas, ramah, dan solutif layaknya Konsultan / Perencana Keuangan Profesional (Financial Planner) keluarga berdasarkan DATA KEUANGAN KELUARGA TERBARU di bawah.
    - Gunakan format markdown tebal, bullet points, dan format mata uang Rupiah yang rapi (contoh: Rp 50.000).
 
-DATA KEUANGAN KELUARGA TERBARU (GUNAKAN DATA INI SECARA AKURAT UNTUK MENJAWAB):
+DATA KEUANGAN KELUARGA TERBARU:
 - Daftar Dompet & Saldo:
 ${JSON.stringify(options.contextWallets, null, 2)}
 
@@ -181,27 +226,82 @@ ${JSON.stringify(options.recentTransactions || [], null, 2)}
 - Pos Dana Siaga (Sinking Funds):
 ${JSON.stringify(options.sinkingFunds || [], null, 2)}
 
-FORMAT RESPON WAJIB:
-Kembalikan HANYA format JSON valid tanpa tanda markdown (tanpa backticks \`\`\`json):
+FORMAT RESPON WAJIB (JSON Valid murni tanpa backticks \`\`\`json):
 
-Jika TRANSACTION_RECORD:
+Jika CREATE_TRANSACTION:
 {
   "intent": "TRANSACTION_RECORD",
-  "amount": 35000,
-  "description": "Beli Sate Ayam",
+  "actionType": "CREATE_TRANSACTION",
+  "amount": 130000,
+  "description": "Belanja Kebutuhan Dapur",
   "type": "EXPENSE",
   "walletId": "id-dompet-terpilih",
   "categoryId": "id-kategori-terpilih",
   "items": [
-    { "name": "Sate Ayam", "price": 35000, "qty": 1 }
+    { "name": "Beras 5kg", "price": 70000, "qty": 1 },
+    { "name": "Telur 1kg", "price": 25000, "qty": 1 },
+    { "name": "Minyak Goreng 2L", "price": 35000, "qty": 1 }
   ],
-  "summaryMessage": "• Keperluan: Beli Sate Ayam\\n• Total: Rp 35.000\\n• Dompet: BCA\\n• Kategori: Makanan & Minuman"
+  "summaryMessage": "• Beras 5kg (Rp 70.000)\\n• Telur 1kg (Rp 25.000)\\n• Minyak Goreng 2L (Rp 35.000)"
+}
+
+Jika CREATE_WALLET:
+{
+  "intent": "TRANSACTION_RECORD",
+  "actionType": "CREATE_WALLET",
+  "walletName": "Bank Jago",
+  "walletType": "BANK",
+  "initialBalance": 500000,
+  "summaryMessage": "• Nama Dompet: Bank Jago\\n• Tipe: BANK\\n• Saldo Awal: Rp 500.000"
+}
+
+Jika TRANSFER_WALLET:
+{
+  "intent": "TRANSACTION_RECORD",
+  "actionType": "TRANSFER_WALLET",
+  "sourceWalletId": "id-dompet-asal",
+  "targetWalletId": "id-dompet-tujuan",
+  "amount": 200000,
+  "description": "Transfer Dana",
+  "summaryMessage": "• Dari Dompet: BCA\\n• Ke Dompet: Gopay\\n• Nominal: Rp 200.000"
+}
+
+Jika SET_BUDGET:
+{
+  "intent": "TRANSACTION_RECORD",
+  "actionType": "SET_BUDGET",
+  "categoryId": "id-kategori-jika-ada",
+  "categoryName": "Makanan",
+  "monthlyBudget": 2000000,
+  "summaryMessage": "• Kategori: Makanan\\n• Batas Anggaran Bulanan: Rp 2.000.000"
+}
+
+Jika CREATE_SINKING_FUND:
+{
+  "intent": "TRANSACTION_RECORD",
+  "actionType": "CREATE_SINKING_FUND",
+  "sinkingFundName": "Tabungan Qurban",
+  "targetAmount": 4000000,
+  "monthlyAlloc": 400000,
+  "sourceWalletId": "id-dompet-sumber",
+  "summaryMessage": "• Pos Dana: Tabungan Qurban\\n• Target: Rp 4.000.000\\n• Alokasi Tiap Bulan: Rp 400.000"
+}
+
+Jika CREATE_RECURRING_BILL:
+{
+  "intent": "TRANSACTION_RECORD",
+  "actionType": "CREATE_RECURRING_BILL",
+  "billName": "Tagihan Wifi Indihome",
+  "amount": 350000,
+  "dueDayOfMonth": 15,
+  "walletId": "id-dompet",
+  "summaryMessage": "• Tagihan: Wifi Indihome\\n• Nominal: Rp 350.000\\n• Jatuh Tempo: Tanggal 15"
 }
 
 Jika FINANCIAL_CONSULTATION:
 {
   "intent": "FINANCIAL_CONSULTATION",
-  "replyText": "Teks jawaban lengkap, ramah, dan solutif sebagai konsultan keuangan keluarga (sertakan rincian transaksi jika ditanya, evaluasi anggaran, dan tips praktis)."
+  "replyText": "Teks jawaban lengkap, ramah, dan solutif sebagai konsultan keuangan keluarga."
 }`;
 
     if (config.provider === 'gemini') {
@@ -294,7 +394,7 @@ Jika FINANCIAL_CONSULTATION:
       }
 
       if (userContent.length === 0) {
-        userContent.push({ type: 'text', text: 'Tolong bantu konsultasi keuangan.' });
+        userContent.push({ type: 'text', text: 'Tolong bantu kelola keuangan keluarga.' });
       }
 
       messages.push({ role: 'user', content: userContent });
@@ -341,16 +441,30 @@ Jika FINANCIAL_CONSULTATION:
 
       return {
         intent: 'TRANSACTION_RECORD',
+        actionType: parsed.actionType || 'CREATE_TRANSACTION',
         amount: Math.abs(Number(parsed.amount) || 0),
-        description: parsed.description || 'Pengeluaran Rumah Tangga',
+        description: parsed.description || 'Transaksi Keuangan',
         type: parsed.type === 'INCOME' ? 'INCOME' : 'EXPENSE',
         walletId: parsed.walletId || defaultWalletId,
         categoryId: parsed.categoryId || defaultCategoryId,
         items: Array.isArray(parsed.items) ? parsed.items : [],
-        summaryMessage: parsed.summaryMessage || `Nominal: Rp ${Number(parsed.amount).toLocaleString('id-ID')}`,
+        summaryMessage: parsed.summaryMessage,
+        // Properties untuk action lainnya:
+        walletName: parsed.walletName,
+        walletType: parsed.walletType,
+        initialBalance: Number(parsed.initialBalance) || 0,
+        sourceWalletId: parsed.sourceWalletId,
+        targetWalletId: parsed.targetWalletId,
+        categoryName: parsed.categoryName,
+        monthlyBudget: Number(parsed.monthlyBudget) || 0,
+        alertThreshold: Number(parsed.alertThreshold) || 80,
+        sinkingFundName: parsed.sinkingFundName,
+        targetAmount: Number(parsed.targetAmount) || 0,
+        monthlyAlloc: Number(parsed.monthlyAlloc) || 0,
+        billName: parsed.billName,
+        dueDayOfMonth: Number(parsed.dueDayOfMonth) || 1,
       };
     } catch (e) {
-      // Jika parsing JSON gagal, perlakukan sebagai respon konsultasi teks
       return {
         intent: 'FINANCIAL_CONSULTATION',
         replyText: rawText.replace(/```[a-z]*|```/gi, '').trim(),

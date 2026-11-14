@@ -395,33 +395,181 @@ export class TelegramManager {
       return;
     }
 
-    // 8. Jika berupa Pencatatan Transaksi Baru
+    // 8. Cabang berdasarkan Action Type Manajemen Keuangan:
+    if (processed.actionType === 'CREATE_WALLET') {
+      const summaryText =
+        `📋 *Draf Pembuatan Dompet Baru:*\n` +
+        `• *Nama Dompet*: ${processed.walletName}\n` +
+        `• *Tipe*: ${processed.walletType || 'BANK'}\n` +
+        `• *Saldo Awal*: Rp ${(processed.initialBalance || 0).toLocaleString('id-ID')}\n\n` +
+        `👉 *Balas "Ya" untuk menyetujui, atau ketik koreksi Anda.*`;
+
+      await ApprovalEngine.createPendingAction(
+        familyId,
+        user.id,
+        ActionType.CREATE_WALLET,
+        {
+          name: processed.walletName,
+          type: processed.walletType || 'BANK',
+          initialBalance: processed.initialBalance || 0,
+        },
+        summaryText
+      );
+      await ctx.reply(summaryText, { parse_mode: 'Markdown' });
+      return;
+    }
+
+    if (processed.actionType === 'TRANSFER_WALLET') {
+      const srcWallet = wallets.find((w) => w.id === processed.sourceWalletId) || wallets[0];
+      const tgtWallet = wallets.find((w) => w.id === processed.targetWalletId) || wallets[1] || wallets[0];
+      const numAmount = processed.amount || 0;
+
+      const summaryText =
+        `📋 *Draf Transfer Antar Dompet:*\n` +
+        `• *Dari Dompet*: ${srcWallet?.name}\n` +
+        `• *Ke Dompet*: ${tgtWallet?.name}\n` +
+        `• *Nominal*: Rp ${numAmount.toLocaleString('id-ID')}\n\n` +
+        `👉 *Balas "Ya" untuk menyetujui transfer ini, atau ketik koreksi Anda.*`;
+
+      await ApprovalEngine.createPendingAction(
+        familyId,
+        user.id,
+        ActionType.TRANSFER_WALLET,
+        {
+          sourceWalletId: srcWallet.id,
+          targetWalletId: tgtWallet.id,
+          amount: numAmount,
+          description: processed.description || 'Transfer Antar Dompet',
+          inputSource: InputSource.TELEGRAM_TEXT,
+        },
+        summaryText
+      );
+      await ctx.reply(summaryText, { parse_mode: 'Markdown' });
+      return;
+    }
+
+    if (processed.actionType === 'SET_BUDGET') {
+      const targetCat = categories.find((c) => c.id === processed.categoryId || c.name.toLowerCase() === (processed.categoryName || '').toLowerCase());
+      const catName = targetCat?.name || processed.categoryName || 'Kategori';
+      const monthlyBudget = processed.monthlyBudget || 0;
+
+      const summaryText =
+        `📋 *Draf Pengaturan Anggaran (Budget):*\n` +
+        `• *Kategori*: ${catName}\n` +
+        `• *Batas Anggaran Bulanan*: Rp ${monthlyBudget.toLocaleString('id-ID')}\n` +
+        `• *Peringatan Guardrail*: 80% kuota\n\n` +
+        `👉 *Balas "Ya" untuk menyetujui anggaran ini, atau ketik koreksi Anda.*`;
+
+      await ApprovalEngine.createPendingAction(
+        familyId,
+        user.id,
+        ActionType.SET_BUDGET,
+        {
+          categoryId: targetCat?.id,
+          categoryName: catName,
+          monthlyBudget,
+          alertThreshold: 80,
+        },
+        summaryText
+      );
+      await ctx.reply(summaryText, { parse_mode: 'Markdown' });
+      return;
+    }
+
+    if (processed.actionType === 'CREATE_SINKING_FUND') {
+      const defaultWallet = wallets[0];
+      const summaryText =
+        `📋 *Draf Pos Dana Siaga (Sinking Fund):*\n` +
+        `• *Nama Pos*: ${processed.sinkingFundName}\n` +
+        `• *Target Dana*: Rp ${(processed.targetAmount || 0).toLocaleString('id-ID')}\n` +
+        `• *Alokasi Bulanan*: Rp ${(processed.monthlyAlloc || 0).toLocaleString('id-ID')}\n` +
+        `• *Sumber Dana*: ${defaultWallet?.name || 'Utama'}\n\n` +
+        `👉 *Balas "Ya" untuk menyetujui pembuatan pos tabungan ini.*`;
+
+      await ApprovalEngine.createPendingAction(
+        familyId,
+        user.id,
+        ActionType.CREATE_SINKING_FUND,
+        {
+          name: processed.sinkingFundName,
+          targetAmount: processed.targetAmount || 0,
+          monthlyAlloc: processed.monthlyAlloc || 0,
+          sourceWalletId: processed.sourceWalletId || defaultWallet?.id,
+        },
+        summaryText
+      );
+      await ctx.reply(summaryText, { parse_mode: 'Markdown' });
+      return;
+    }
+
+    if (processed.actionType === 'CREATE_RECURRING_BILL') {
+      const defaultWallet = wallets[0];
+      const defaultCat = categories[0];
+      const summaryText =
+        `📋 *Draf Jadwal Tagihan Rutin Bulanan:*\n` +
+        `• *Nama Tagihan*: ${processed.billName}\n` +
+        `• *Nominal*: Rp ${(processed.amount || 0).toLocaleString('id-ID')}\n` +
+        `• *Jatuh Tempo*: Tanggal ${processed.dueDayOfMonth || 1} setiap bulan\n` +
+        `• *Sumber Dompet*: ${defaultWallet?.name || 'Utama'}\n\n` +
+        `👉 *Balas "Ya" untuk menyetujui jadwal tagihan ini.*`;
+
+      await ApprovalEngine.createPendingAction(
+        familyId,
+        user.id,
+        ActionType.CREATE_RECURRING_BILL,
+        {
+          name: processed.billName,
+          amount: processed.amount || 0,
+          dueDayOfMonth: processed.dueDayOfMonth || 1,
+          walletId: processed.walletId || defaultWallet?.id,
+          categoryId: processed.categoryId || defaultCat?.id,
+        },
+        summaryText
+      );
+      await ctx.reply(summaryText, { parse_mode: 'Markdown' });
+      return;
+    }
+
+    // 9. Jika berupa Pencatatan Transaksi Baru (CREATE_TRANSACTION)
     if (!processed.amount || processed.amount <= 0) {
       await ctx.reply('Mohon maaf, nominal pengeluaran belum terbaca dengan jelas. Bisa disebutkan kembali keperluan dan nominalnya?');
       return;
     }
 
-    // 9. Buat draf persetujuan (Human-in-the-Loop)
+    const targetWallet = wallets.find((w) => w.id === processed.walletId) || wallets[0];
+    const targetCategory = categories.find((c) => c.id === processed.categoryId) || categories[0];
+
+    const hasMultipleItems = Array.isArray(processed.items) && processed.items.length > 1;
+    let summaryText = '';
+
+    if (hasMultipleItems) {
+      const itemsList = (processed.items || []).map((it, idx) => `  ${idx + 1}. ${it.name}: Rp ${((it.price || 0) * (it.qty || 1)).toLocaleString('id-ID')}`).join('\n');
+      summaryText =
+        `📋 *Draf Pencatatan Transaksi (${processed.items!.length} Item Terpisah):*\n` +
+        itemsList +
+        `\n\n• *Total*: Rp ${processed.amount.toLocaleString('id-ID')}\n` +
+        `• *Dompet*: ${targetWallet?.name || 'Utama'}\n` +
+        `• *Kategori*: ${targetCategory?.name || 'Umum'}\n\n` +
+        `👉 *Balas "Ya" untuk menyetujui dan mencatat tiap item satu-per-satu ke jurnal, atau ketik koreksi Anda.*`;
+    } else {
+      summaryText =
+        `📋 *Draf Pencatatan Ditemukan:*\n` +
+        `• *Keperluan*: ${processed.description}\n` +
+        `• *Total*: Rp ${processed.amount.toLocaleString('id-ID')}\n` +
+        `• *Dompet*: ${targetWallet?.name || 'Utama'}\n` +
+        `• *Kategori*: ${targetCategory?.name || 'Umum'}\n\n` +
+        `👉 *Balas "Ya" untuk menyetujui, atau ketik koreksi Anda.*`;
+    }
+
     const proposedPayload = {
-      walletId: processed.walletId || wallets[0]?.id || '',
-      categoryId: processed.categoryId || categories[0]?.id,
+      walletId: targetWallet.id,
+      categoryId: targetCategory.id,
       amount: processed.amount,
       description: processed.description || 'Pengeluaran Rumah Tangga',
       type: processed.type === 'INCOME' ? TransactionType.INCOME : TransactionType.EXPENSE,
       inputSource: imageBase64 ? InputSource.TELEGRAM_IMAGE_RECEIPT : audioBase64 ? InputSource.TELEGRAM_VOICE_NOTE : InputSource.TELEGRAM_TEXT,
       items: processed.items,
     };
-
-    const targetWallet = wallets.find((w) => w.id === processed.walletId) || wallets[0];
-    const targetCategory = categories.find((c) => c.id === processed.categoryId) || categories[0];
-
-    const summaryText =
-      `📋 *Draf Pencatatan Ditemukan:*\n` +
-      `• *Keperluan*: ${processed.description}\n` +
-      `• *Total*: Rp ${processed.amount.toLocaleString('id-ID')}\n` +
-      `• *Dompet*: ${targetWallet?.name || 'Utama'}\n` +
-      `• *Kategori*: ${targetCategory?.name || 'Umum'}\n\n` +
-      `👉 *Balas "Ya" untuk menyetujui, atau ketik koreksi Anda.*`;
 
     await ApprovalEngine.createPendingAction(
       familyId,
