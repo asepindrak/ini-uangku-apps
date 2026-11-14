@@ -6,9 +6,9 @@ export async function checkAppUpdate(): Promise<UpdateInfo> {
   if (!isTauri) {
     return {
       has_update: false,
-      current_version: '1.0.0 (Web/Dev)',
-      latest_version: '1.0.0',
-      release_title: 'Ini Uangku v1.0.0',
+      current_version: '1.1.0 (Web/Dev)',
+      latest_version: '1.1.0',
+      release_title: 'Ini Uangku v1.1.0',
       release_notes: 'Mode Web / Preview',
       release_date: new Date().toISOString(),
       html_url: 'https://github.com/asepindrak/ini-uangku-apps/releases',
