@@ -1,0 +1,2125 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title id="pageTitle">Ini Uangku — Asisten Finansial Keluarga AI Cerdas bersama Monee</title>
+  <meta name="description" id="pageDesc"
+    content="Kelola keuangan keluarga tanpa ribet bersama Monee AI. Pindai struk belanja, kirim voice note di WhatsApp atau Telegram, dan catat jurnal otomatis dengan konfirmasi persetujuan Anda." />
+  <meta name="keywords"
+    content="keuangan keluarga, pengatur keuangan, monee ai, aplikasi keuangan keluarga, scan struk belanja ai, bot whatsapp keuangan, bot telegram keuangan, sinking fund, dana darurat, multi wallet, pencatat pengeluaran, tauri v2, ini uangku" />
+  <meta name="author" content="Ini Uangku Team" />
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+  <link rel="canonical" href="https://monee.raydrop.web.id/" />
+
+  <!-- Open Graph / WhatsApp / Telegram / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Ini Uangku - Monee AI" />
+  <meta property="og:url" content="https://monee.raydrop.web.id/" />
+  <meta property="og:title" id="ogTitle"
+    content="Ini Uangku — Asisten Finansial Keluarga AI Cerdas bersama Monee" />
+  <meta property="og:description" id="ogDesc"
+    content="Kelola keuangan keluarga tanpa ribet bersama Monee AI. Pindai struk belanja, kirim voice note di WhatsApp atau Telegram, dan catat jurnal otomatis dengan konfirmasi persetujuan Anda." />
+  <meta property="og:image" content="https://raw.githubusercontent.com/asepindrak/ini-uangku-apps/main/logo.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Ini Uangku - Monee AI Family Finance" />
+  <meta property="og:locale" content="id_ID" />
+  <meta property="og:locale:alternate" content="en_US" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:url" content="https://monee.raydrop.web.id/" />
+  <meta name="twitter:title" id="twTitle" content="Ini Uangku — Asisten Finansial Keluarga AI Cerdas bersama Monee" />
+  <meta name="twitter:description" id="twDesc"
+    content="Kelola keuangan keluarga tanpa ribet bersama Monee AI. Pindai struk belanja, kirim voice note di WhatsApp & Telegram." />
+  <meta name="twitter:image" content="https://raw.githubusercontent.com/asepindrak/ini-uangku-apps/main/logo.png" />
+
+  <!-- Theme Colors -->
+  <meta name="theme-color" content="#C1ECFD" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#1E1B2E" media="(prefers-color-scheme: dark)" />
+  <meta name="application-name" content="Ini Uangku" />
+  <meta name="apple-mobile-web-app-title" content="Ini Uangku" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+
+  <!-- Favicons -->
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/icon.png" />
+  <link rel="apple-touch-icon" href="/icon.png" />
+
+  <!-- JSON-LD Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "name": "Ini Uangku",
+        "alternateName": "Monee AI",
+        "operatingSystem": "Windows 10, Windows 11, macOS 11+, Linux, Android 8.0+, Web",
+        "applicationCategory": "FinanceApplication",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "IDR"
+        },
+        "description": "Smart family financial management assistant powered by Monee AI with multimodal receipt scanning, WhatsApp/Telegram bot, and collaborative multi-wallet budgets.",
+        "softwareVersion": "1.1.0",
+        "url": "https://monee.raydrop.web.id",
+        "downloadUrl": "https://github.com/asepindrak/ini-uangku-apps/releases/latest",
+        "image": "https://raw.githubusercontent.com/asepindrak/ini-uangku-apps/main/logo.png"
+      },
+      {
+        "@type": "WebSite",
+        "name": "Ini Uangku - Monee AI",
+        "url": "https://monee.raydrop.web.id/",
+        "description": "Smart Family Financial Management Assistant with AI Receipt Scanning and Multi-Wallet Sync."
+      }
+    ]
+  }
+  </script>
+
+  <!-- Fonts: Plus Jakarta Sans & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap"
+    rel="stylesheet">
+
+  <style>
+    :root {
+      /* Brand Pastel Palette matching Ini Uangku */
+      --brand-sky: #C1ECFD;
+      --brand-sky-light: #EBF8FE;
+      --brand-sky-dark: #8ED7FA;
+      
+      --brand-peach: #FFC1B6;
+      --brand-peach-light: #FFF0ED;
+      --brand-peach-dark: #FA9E90;
+      
+      --brand-butter: #FDEEAD;
+      --brand-butter-light: #FFFDF0;
+      --brand-butter-dark: #F5DC76;
+      
+      --brand-mint: #C3F0DE;
+      --brand-mint-light: #EAFBF4;
+      --brand-mint-dark: #8DE2BE;
+      
+      --brand-indigo: #443D66;
+      --brand-indigo-light: #655C8F;
+      --brand-indigo-dark: #29243C;
+
+      --bg: #FBFBFE;
+      --surface: rgba(255, 255, 255, 0.85);
+      --surface-card: rgba(255, 255, 255, 0.72);
+      --surface-card-hover: rgba(255, 255, 255, 0.95);
+      --surface-border: rgba(255, 255, 255, 0.8);
+      --border-subtle: rgba(68, 61, 102, 0.08);
+      
+      --ink: #443D66;
+      --ink-muted: #767094;
+      --ink-subtle: #A39DBB;
+
+      --accent: #655C8F;
+      --accent-gradient: linear-gradient(135deg, #FFC1B6 0%, #C1ECFD 50%, #FDEEAD 100%);
+      --accent-btn: linear-gradient(135deg, #655C8F 0%, #443D66 100%);
+
+      --shadow-glass: 0 16px 40px -10px rgba(68, 61, 102, 0.08), 0 4px 16px -2px rgba(68, 61, 102, 0.04);
+      --shadow-hover: 0 24px 60px -12px rgba(68, 61, 102, 0.14), 0 8px 24px -4px rgba(68, 61, 102, 0.06);
+      --glow-sky: 0 0 35px rgba(193, 236, 253, 0.7);
+      --glow-peach: 0 0 35px rgba(255, 193, 182, 0.7);
+
+      --radius-xl: 28px;
+      --radius-lg: 20px;
+      --radius-md: 14px;
+      --radius-sm: 10px;
+      --radius-pill: 9999px;
+
+      --font: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --container: 1200px;
+      color-scheme: light;
+    }
+
+    /* Dark Mode (Pastel Neon Indigo) */
+    [data-theme="dark"] {
+      --bg: #141124;
+      --surface: rgba(30, 26, 48, 0.85);
+      --surface-card: rgba(36, 31, 58, 0.7);
+      --surface-card-hover: rgba(43, 37, 70, 0.9);
+      --surface-border: rgba(255, 255, 255, 0.12);
+      --border-subtle: rgba(255, 255, 255, 0.08);
+
+      --ink: #F2EFFD;
+      --ink-muted: #B4AFD0;
+      --ink-subtle: #7A749B;
+
+      --accent: #8ED7FA;
+      --accent-btn: linear-gradient(135deg, #FA9E90 0%, #C1ECFD 100%);
+      
+      --shadow-glass: 0 16px 40px -10px rgba(0, 0, 0, 0.4);
+      --shadow-hover: 0 24px 60px -12px rgba(0, 0, 0, 0.6);
+      color-scheme: dark;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      font-size: 16px;
+    }
+
+    body {
+      font-family: var(--font);
+      background-color: var(--bg);
+      color: var(--ink);
+      line-height: 1.6;
+      overflow-x: hidden;
+      min-height: 100vh;
+      position: relative;
+    }
+
+    /* Pastel Ambient Glow Background */
+    .ambient-bg {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      overflow: hidden;
+    }
+
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(90px);
+      opacity: 0.6;
+      will-change: transform;
+      animation: floatOrb 18s ease-in-out infinite alternate;
+    }
+
+    .orb-1 {
+      top: -100px;
+      left: 10%;
+      width: 500px;
+      height: 500px;
+      background: var(--brand-sky);
+    }
+
+    .orb-2 {
+      top: 250px;
+      right: 5%;
+      width: 480px;
+      height: 480px;
+      background: var(--brand-peach);
+      animation-duration: 22s;
+      animation-delay: -5s;
+    }
+
+    .orb-3 {
+      top: 900px;
+      left: 5%;
+      width: 450px;
+      height: 450px;
+      background: var(--brand-butter);
+      animation-duration: 20s;
+      animation-delay: -8s;
+    }
+
+    .orb-4 {
+      top: 1600px;
+      right: 15%;
+      width: 520px;
+      height: 520px;
+      background: var(--brand-mint);
+      animation-duration: 25s;
+    }
+
+    @keyframes floatOrb {
+      0% { transform: translate(0, 0) scale(1); }
+      50% { transform: translate(40px, 60px) scale(1.08); }
+      100% { transform: translate(-30px, 30px) scale(0.95); }
+    }
+
+    .container {
+      max-width: var(--container);
+      margin: 0 auto;
+      padding: 0 24px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Top Sticky Navigation */
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      transition: all 0.3s ease;
+      background: rgba(251, 251, 254, 0.4);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid transparent;
+    }
+
+    [data-theme="dark"] .nav {
+      background: rgba(20, 17, 36, 0.5);
+    }
+
+    .nav.is-scrolled {
+      background: var(--surface);
+      border-bottom-color: var(--border-subtle);
+      box-shadow: 0 10px 30px -10px rgba(68, 61, 102, 0.08);
+    }
+
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 76px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--ink);
+    }
+
+    .brand img {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      box-shadow: 0 6px 16px rgba(68, 61, 102, 0.12);
+    }
+
+    .brand-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .monee-pill {
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: var(--radius-pill);
+      background: var(--brand-peach-light);
+      color: #D9534F;
+      border: 1px solid rgba(250, 158, 144, 0.4);
+      letter-spacing: 0.02em;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    [data-theme="dark"] .monee-pill {
+      background: rgba(250, 158, 144, 0.15);
+      color: var(--brand-peach);
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+    }
+
+    .nav-links a {
+      text-decoration: none;
+      color: var(--ink-muted);
+      font-weight: 600;
+      font-size: 0.95rem;
+      transition: color 0.2s ease;
+    }
+
+    .nav-links a:hover {
+      color: var(--ink);
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* Language Switcher */
+    .lang-pill {
+      display: flex;
+      background: var(--surface-card);
+      padding: 4px;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--border-subtle);
+      box-shadow: 0 2px 8px rgba(68, 61, 102, 0.04);
+    }
+
+    .lang-opt {
+      border: none;
+      background: transparent;
+      color: var(--ink-muted);
+      font-family: inherit;
+      font-size: 0.8rem;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: var(--radius-pill);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .lang-opt.active {
+      background: var(--ink);
+      color: #FFFFFF;
+    }
+
+    [data-theme="dark"] .lang-opt.active {
+      background: var(--brand-sky);
+      color: var(--brand-indigo-dark);
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 11px 22px;
+      border-radius: var(--radius-pill);
+      font-size: 0.92rem;
+      font-weight: 700;
+      text-decoration: none;
+      transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+      cursor: pointer;
+      border: none;
+    }
+
+    .btn-primary {
+      background: var(--brand-indigo);
+      color: #FFFFFF;
+      box-shadow: 0 10px 24px -6px rgba(68, 61, 102, 0.35);
+    }
+
+    [data-theme="dark"] .btn-primary {
+      background: linear-gradient(135deg, #FA9E90 0%, #C1ECFD 100%);
+      color: #141124;
+      box-shadow: 0 10px 24px -6px rgba(250, 158, 144, 0.3);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 14px 28px -6px rgba(68, 61, 102, 0.45);
+    }
+
+    .btn-secondary {
+      background: var(--surface);
+      color: var(--ink);
+      border: 1px solid var(--surface-border);
+      box-shadow: var(--shadow-glass);
+      backdrop-filter: blur(12px);
+    }
+
+    .btn-secondary:hover {
+      background: #FFFFFF;
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-hover);
+    }
+
+    .btn-large {
+      padding: 15px 32px;
+      font-size: 1.05rem;
+    }
+
+    .btn-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--surface-card);
+      border: 1px solid var(--border-subtle);
+      color: var(--ink);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-icon:hover {
+      background: var(--surface-card-hover);
+      transform: scale(1.05);
+    }
+
+    /* Hero Section */
+    .hero {
+      padding: 50px 0 80px;
+      display: grid;
+      grid-template-columns: 1.15fr 0.95fr;
+      gap: 50px;
+      align-items: center;
+    }
+
+    .badge-wrapper {
+      margin-bottom: 24px;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 16px;
+      border-radius: var(--radius-pill);
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      box-shadow: var(--shadow-glass);
+      backdrop-filter: blur(14px);
+      text-decoration: none;
+      color: var(--ink);
+      font-size: 0.88rem;
+      font-weight: 600;
+      transition: all 0.25s ease;
+    }
+
+    .hero-badge:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-hover);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10B981;
+      box-shadow: 0 0 10px #10B981;
+      display: inline-block;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.2); opacity: 1; }
+      100% { transform: scale(0.95); opacity: 0.8; }
+    }
+
+    .hero-title {
+      font-size: 3.4rem;
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+      margin-bottom: 24px;
+      color: var(--ink);
+    }
+
+    .hero-title .gradient-text {
+      background: linear-gradient(135deg, #FA9E90 0%, #655C8F 50%, #443D66 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    [data-theme="dark"] .hero-title .gradient-text {
+      background: linear-gradient(135deg, #FFC1B6 0%, #C1ECFD 60%, #FDEEAD 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-lead {
+      font-size: 1.15rem;
+      color: var(--ink-muted);
+      line-height: 1.7;
+      margin-bottom: 36px;
+      max-width: 580px;
+    }
+
+    .hero-ctas {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 28px;
+    }
+
+    .hero-meta {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      font-size: 0.88rem;
+      color: var(--ink-subtle);
+      font-weight: 500;
+    }
+
+    .hero-meta span {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Hero Demo Interactive Phone & Card Window */
+    .hero-demo-box {
+      position: relative;
+    }
+
+    .chat-mockup {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-glass);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      z-index: 2;
+    }
+
+    .chat-header {
+      padding: 16px 20px;
+      background: rgba(255, 255, 255, 0.4);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    [data-theme="dark"] .chat-header {
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .chat-user-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .chat-avatar {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: var(--brand-sky-light);
+      border: 2px solid var(--brand-peach);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      box-shadow: 0 4px 12px rgba(250, 158, 144, 0.3);
+    }
+
+    .chat-name {
+      font-weight: 700;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .chat-status {
+      font-size: 0.75rem;
+      color: #10B981;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .chat-body {
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background: linear-gradient(180deg, rgba(235, 248, 254, 0.25) 0%, rgba(255, 240, 237, 0.25) 100%);
+    }
+
+    .bubble {
+      max-width: 88%;
+      padding: 14px 18px;
+      border-radius: var(--radius-lg);
+      font-size: 0.92rem;
+      line-height: 1.55;
+      box-shadow: 0 4px 16px rgba(68, 61, 102, 0.05);
+      position: relative;
+    }
+
+    .bubble-user {
+      align-self: flex-end;
+      background: var(--brand-indigo);
+      color: #FFFFFF;
+      border-bottom-right-radius: 4px;
+    }
+
+    [data-theme="dark"] .bubble-user {
+      background: #3B3358;
+    }
+
+    .bubble-monee {
+      align-self: flex-start;
+      background: #FFFFFF;
+      color: var(--ink);
+      border-bottom-left-radius: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.9);
+    }
+
+    [data-theme="dark"] .bubble-monee {
+      background: #25203D;
+      border-color: rgba(255, 255, 255, 0.08);
+      color: #F2EFFD;
+    }
+
+    .bubble-receipt-card {
+      background: var(--brand-sky-light);
+      border-radius: var(--radius-md);
+      padding: 10px 14px;
+      margin: 10px 0;
+      border-left: 4px solid var(--brand-sky-dark);
+      font-size: 0.86rem;
+    }
+
+    [data-theme="dark"] .bubble-receipt-card {
+      background: rgba(142, 215, 250, 0.12);
+      border-left-color: var(--brand-sky);
+    }
+
+    .receipt-item {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+
+    .receipt-item b {
+      color: var(--ink);
+    }
+
+    .chat-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .chat-btn {
+      padding: 8px 16px;
+      border-radius: var(--radius-pill);
+      font-size: 0.85rem;
+      font-weight: 700;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .chat-btn-confirm {
+      background: #10B981;
+      color: #FFFFFF;
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+    }
+
+    .chat-btn-confirm:hover {
+      background: #059669;
+      transform: translateY(-1px);
+    }
+
+    .chat-btn-cancel {
+      background: rgba(68, 61, 102, 0.1);
+      color: var(--ink);
+    }
+
+    /* Floating Dashboard Cards around Mockup */
+    .floating-card-1 {
+      position: absolute;
+      top: -24px;
+      right: -24px;
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-lg);
+      padding: 14px 20px;
+      box-shadow: var(--shadow-hover);
+      backdrop-filter: blur(20px);
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      animation: floatWidget1 6s ease-in-out infinite alternate;
+    }
+
+    .floating-card-2 {
+      position: absolute;
+      bottom: -24px;
+      left: -20px;
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-lg);
+      padding: 14px 20px;
+      box-shadow: var(--shadow-hover);
+      backdrop-filter: blur(20px);
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      animation: floatWidget2 7s ease-in-out infinite alternate;
+    }
+
+    @keyframes floatWidget1 {
+      0% { transform: translateY(0); }
+      100% { transform: translateY(-8px); }
+    }
+
+    @keyframes floatWidget2 {
+      0% { transform: translateY(0); }
+      100% { transform: translateY(8px); }
+    }
+
+    .widget-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+    }
+
+    .widget-icon.green {
+      background: var(--brand-mint-light);
+      color: #059669;
+      border: 1px solid var(--brand-mint);
+    }
+
+    .widget-icon.peach {
+      background: var(--brand-peach-light);
+      color: #D9534F;
+      border: 1px solid var(--brand-peach);
+    }
+
+    .widget-label {
+      font-size: 0.78rem;
+      color: var(--ink-muted);
+      font-weight: 600;
+    }
+
+    .widget-val {
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: var(--ink);
+    }
+
+    /* Sections */
+    .section {
+      padding: 100px 0;
+      position: relative;
+    }
+
+    .section-head {
+      text-align: center;
+      max-width: 680px;
+      margin: 0 auto 60px;
+    }
+
+    .section-kicker {
+      font-size: 0.85rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #E06D53;
+      margin-bottom: 12px;
+      display: inline-block;
+    }
+
+    [data-theme="dark"] .section-kicker {
+      color: var(--brand-peach);
+    }
+
+    .section-title {
+      font-size: 2.5rem;
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      margin-bottom: 16px;
+      line-height: 1.2;
+    }
+
+    .section-desc {
+      font-size: 1.1rem;
+      color: var(--ink-muted);
+      line-height: 1.65;
+    }
+
+    /* Bento Grid Features */
+    .bento {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+
+    .bento-col-2 {
+      grid-column: span 2;
+    }
+
+    .card {
+      background: var(--surface-card);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-xl);
+      padding: 36px 32px;
+      box-shadow: var(--shadow-glass);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--shadow-hover);
+      background: var(--surface-card-hover);
+    }
+
+    .card-icon {
+      width: 56px;
+      height: 56px;
+      border-radius: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 24px;
+      font-size: 1.7rem;
+      box-shadow: 0 8px 20px rgba(68, 61, 102, 0.06);
+    }
+
+    .card-icon.sky { background: var(--brand-sky-light); border: 1px solid var(--brand-sky); }
+    .card-icon.peach { background: var(--brand-peach-light); border: 1px solid var(--brand-peach); }
+    .card-icon.butter { background: var(--brand-butter-light); border: 1px solid var(--brand-butter); }
+    .card-icon.mint { background: var(--brand-mint-light); border: 1px solid var(--brand-mint); }
+    .card-icon.indigo { background: #E8E5F3; border: 1px solid #D0CCE5; }
+
+    [data-theme="dark"] .card-icon.sky { background: rgba(193, 236, 253, 0.15); border-color: rgba(193, 236, 253, 0.3); }
+    [data-theme="dark"] .card-icon.peach { background: rgba(255, 193, 182, 0.15); border-color: rgba(255, 193, 182, 0.3); }
+    [data-theme="dark"] .card-icon.butter { background: rgba(253, 238, 173, 0.15); border-color: rgba(253, 238, 173, 0.3); }
+    [data-theme="dark"] .card-icon.mint { background: rgba(195, 240, 222, 0.15); border-color: rgba(195, 240, 222, 0.3); }
+    [data-theme="dark"] .card-icon.indigo { background: rgba(101, 92, 143, 0.25); border-color: rgba(101, 92, 143, 0.4); }
+
+    .card-title {
+      font-size: 1.3rem;
+      font-weight: 800;
+      margin-bottom: 12px;
+      letter-spacing: -0.015em;
+    }
+
+    .card-desc {
+      font-size: 0.98rem;
+      color: var(--ink-muted);
+      line-height: 1.65;
+    }
+
+    /* Steps (Cara Kerja) */
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 32px;
+      margin-top: 40px;
+    }
+
+    .step-card {
+      background: var(--surface-card);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-xl);
+      padding: 36px 30px;
+      box-shadow: var(--shadow-glass);
+      backdrop-filter: blur(16px);
+      position: relative;
+    }
+
+    .step-badge {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--brand-indigo);
+      color: #FFFFFF;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 1.15rem;
+      margin-bottom: 22px;
+      box-shadow: 0 6px 16px rgba(68, 61, 102, 0.25);
+    }
+
+    [data-theme="dark"] .step-badge {
+      background: var(--brand-sky);
+      color: var(--brand-indigo-dark);
+    }
+
+    .step-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      margin-bottom: 12px;
+    }
+
+    .step-desc {
+      font-size: 0.95rem;
+      color: var(--ink-muted);
+      line-height: 1.6;
+    }
+
+    /* Downloads Platform Matrix */
+    .platforms {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 24px;
+    }
+
+    .platform-card {
+      background: var(--surface-card);
+      border: 2px solid var(--surface-border);
+      border-radius: var(--radius-xl);
+      padding: 32px 24px;
+      box-shadow: var(--shadow-glass);
+      backdrop-filter: blur(20px);
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      transition: all 0.3s ease;
+      position: relative;
+    }
+
+    .platform-card.featured {
+      border-color: var(--brand-peach);
+      background: var(--surface);
+      box-shadow: var(--glow-peach), var(--shadow-hover);
+      transform: translateY(-4px);
+    }
+
+    .os-tag {
+      position: absolute;
+      top: -12px;
+      background: var(--brand-peach);
+      color: #443D66;
+      font-size: 0.75rem;
+      font-weight: 800;
+      padding: 4px 12px;
+      border-radius: var(--radius-pill);
+      box-shadow: 0 4px 12px rgba(255, 193, 182, 0.5);
+      display: none;
+    }
+
+    .platform-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 20px;
+      background: var(--surface);
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      margin-bottom: 18px;
+      box-shadow: 0 8px 24px rgba(68, 61, 102, 0.08);
+    }
+
+    .platform-name {
+      font-size: 1.35rem;
+      font-weight: 800;
+      margin-bottom: 4px;
+    }
+
+    .platform-desc {
+      font-size: 0.85rem;
+      color: var(--ink-muted);
+      margin-bottom: 20px;
+    }
+
+    .platform-actions {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: auto;
+    }
+
+    .platform-actions .btn {
+      width: 100%;
+      padding: 12px;
+      font-size: 0.88rem;
+    }
+
+    .size-info {
+      font-size: 0.78rem;
+      color: var(--ink-subtle);
+      margin-top: 6px;
+    }
+
+    /* Web App Banner Card */
+    .webapp-banner {
+      margin-top: 40px;
+      background: linear-gradient(135deg, var(--brand-sky-light) 0%, var(--brand-peach-light) 100%);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-xl);
+      padding: 36px 44px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: var(--shadow-glass);
+    }
+
+    [data-theme="dark"] .webapp-banner {
+      background: linear-gradient(135deg, rgba(193, 236, 253, 0.1) 0%, rgba(255, 193, 182, 0.1) 100%);
+    }
+
+    .webapp-info h3 {
+      font-size: 1.5rem;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+
+    .webapp-info p {
+      color: var(--ink-muted);
+      font-size: 1rem;
+      max-width: 600px;
+    }
+
+    /* FAQ Section */
+    .faq-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .faq-item {
+      background: var(--surface-card);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-lg);
+      padding: 24px 28px;
+      box-shadow: var(--shadow-glass);
+      backdrop-filter: blur(14px);
+    }
+
+    .faq-q {
+      font-size: 1.1rem;
+      font-weight: 800;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .faq-a {
+      font-size: 0.95rem;
+      color: var(--ink-muted);
+      line-height: 1.6;
+    }
+
+    /* Footer */
+    .footer {
+      border-top: 1px solid var(--border-subtle);
+      padding: 60px 0 40px;
+      margin-top: 80px;
+      background: rgba(255, 255, 255, 0.4);
+      backdrop-filter: blur(16px);
+    }
+
+    [data-theme="dark"] .footer {
+      background: rgba(20, 17, 36, 0.6);
+    }
+
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 24px;
+    }
+
+    .footer-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 800;
+      font-size: 1.15rem;
+    }
+
+    .footer-brand img {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+    }
+
+    .footer-copy {
+      font-size: 0.88rem;
+      color: var(--ink-subtle);
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 24px;
+      font-size: 0.92rem;
+      font-weight: 600;
+    }
+
+    .footer-links a {
+      text-decoration: none;
+      color: var(--ink-muted);
+      transition: color 0.2s ease;
+    }
+
+    .footer-links a:hover {
+      color: var(--ink);
+    }
+
+    /* Toast Notification */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--brand-indigo);
+      color: #FFFFFF;
+      padding: 14px 22px;
+      border-radius: var(--radius-pill);
+      font-size: 0.92rem;
+      font-weight: 600;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      z-index: 999;
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+      pointer-events: none;
+    }
+
+    .toast.show {
+      transform: translateY(0);
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* Responsive */
+    @media (max-width: 1024px) {
+      .hero {
+        grid-template-columns: 1fr;
+        text-align: center;
+      }
+      .hero-lead {
+        margin: 0 auto 36px;
+      }
+      .hero-ctas, .hero-meta {
+        justify-content: center;
+      }
+      .bento {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .bento-col-2 {
+        grid-column: span 2;
+      }
+      .platforms {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .steps {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .nav-links {
+        display: none;
+      }
+      .hero-title {
+        font-size: 2.5rem;
+      }
+      .bento {
+        grid-template-columns: 1fr;
+      }
+      .bento-col-2 {
+        grid-column: span 1;
+      }
+      .platforms {
+        grid-template-columns: 1fr;
+      }
+      .faq-grid {
+        grid-template-columns: 1fr;
+      }
+      .webapp-banner {
+        flex-direction: column;
+        gap: 20px;
+        text-align: center;
+      }
+      .floating-card-1, .floating-card-2 {
+        display: none;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Ambient Pastel Aura Glows -->
+  <div class="ambient-bg" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+    <div class="orb orb-4"></div>
+  </div>
+
+  <!-- Navbar -->
+  <header class="nav" id="navbar">
+    <div class="container nav-inner">
+      <a href="#" class="brand">
+        <img src="/logo.png" alt="Ini Uangku Logo" />
+        <span class="brand-title">
+          Ini Uangku
+          <span class="monee-pill">✨ Monee AI</span>
+        </span>
+      </a>
+
+      <nav class="nav-links">
+        <a href="#features" data-i18n="nav_features">Fitur Unggulan</a>
+        <a href="#how" data-i18n="nav_how">Cara Kerja</a>
+        <a href="#download" data-i18n="nav_download">Unduh</a>
+        <a href="#faq" data-i18n="nav_faq">FAQ</a>
+        <a href="https://github.com/asepindrak/ini-uangku-apps" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+
+      <div class="nav-actions">
+        <!-- Language Switcher -->
+        <div class="lang-pill" aria-label="Pilih Bahasa">
+          <button type="button" class="lang-opt active" id="langIdBtn" onclick="changeLanguage('id')">ID</button>
+          <button type="button" class="lang-opt" id="langEnBtn" onclick="changeLanguage('en')">EN</button>
+        </div>
+
+        <!-- Dark/Light Mode Toggle -->
+        <button class="btn-icon" id="themeToggle" title="Ganti Mode Gelap/Terang" aria-label="Toggle theme">
+          <svg id="sunIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+        </button>
+
+        <!-- Web App Link -->
+        <a href="https://iniuangku.raydrop.web.id" target="_blank" class="btn btn-secondary" style="padding: 9px 18px; font-size: 0.88rem;" data-i18n="nav_webapp">
+          Buka Web
+        </a>
+
+        <!-- Download CTA -->
+        <a href="#download" class="btn btn-primary" style="padding: 9px 20px; font-size: 0.88rem;">
+          <span data-i18n="nav_cta">Download</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero Section -->
+    <section class="hero container">
+      <div class="hero-copy">
+        <div class="badge-wrapper">
+          <a class="hero-badge" href="https://github.com/asepindrak/ini-uangku-apps/releases/latest" target="_blank" rel="noopener">
+            <span class="status-dot"></span>
+            <span id="badgeText">Monee v1.1.0: AI Asisten Finansial Keluarga Pintar</span>
+          </a>
+        </div>
+
+        <h1 class="hero-title">
+          <span data-i18n="hero_title_1">Kelola Keuangan Keluarga</span><br />
+          <span class="gradient-text" data-i18n="hero_title_2">Bersama Monee AI</span>
+        </h1>
+
+        <p class="hero-lead" data-i18n="hero_lead">
+          Bukan sekadar pencatat uang biasa. Foto struk belanja, kirim rekaman suara di WhatsApp atau Telegram, dan biarkan Monee merapikan jurnal keuangan keluarga dengan persetujuanmu. 100% transparan, aman, dan tanpa iklan.
+        </p>
+
+        <div class="hero-ctas">
+          <a class="btn btn-primary btn-large" href="#download" id="primaryHeroDlBtn">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span id="heroDlText" data-i18n="hero_cta_dl">Download untuk Windows</span>
+          </a>
+
+          <a class="btn btn-secondary btn-large" href="https://iniuangku.raydrop.web.id" target="_blank" data-i18n="hero_cta_web">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="2" y1="12" x2="22" y2="12"></line>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+            Buka Web App
+          </a>
+        </div>
+
+        <div class="hero-meta">
+          <span><span style="color:#10B981;">✓</span> <span data-i18n="meta_free">100% Gratis & Open Source</span></span>
+          <span><span style="color:#10B981;">✓</span> <span data-i18n="meta_multidevice">Multi-Device Sync</span></span>
+          <span><span style="color:#10B981;">✓</span> <span data-i18n="meta_privacy">Privasi Terjaga</span></span>
+        </div>
+      </div>
+
+      <!-- Hero Interactive Mockup Box -->
+      <div class="hero-demo-box">
+        <!-- Floating Widget 1: Net Worth -->
+        <div class="floating-card-1">
+          <div class="widget-icon green">💰</div>
+          <div>
+            <div class="widget-label" data-i18n="widget_networth">Kekayaan Bersih</div>
+            <div class="widget-val" id="netWorthDisplay">Rp 48.500.000</div>
+          </div>
+        </div>
+
+        <!-- Floating Widget 2: Sinking Fund -->
+        <div class="floating-card-2">
+          <div class="widget-icon peach">🏖️</div>
+          <div>
+            <div class="widget-label" data-i18n="widget_fund">Dana Liburan (75%)</div>
+            <div class="widget-val" style="color:#FA9E90;">Rp 7.500.000 / 10jt</div>
+          </div>
+        </div>
+
+        <!-- Chat Mockup with Monee -->
+        <div class="chat-mockup">
+          <div class="chat-header">
+            <div class="chat-user-info">
+              <div class="chat-avatar">🎀</div>
+              <div>
+                <div class="chat-name">
+                  Monee
+                  <span class="monee-pill" style="font-size:0.65rem; padding: 2px 7px;">AI Bot</span>
+                </div>
+                <div class="chat-status">
+                  <span class="status-dot" style="width:6px; height:6px;"></span>
+                  Online di WhatsApp & Telegram
+                </div>
+              </div>
+            </div>
+            <button class="btn-icon" style="width:32px; height:32px;" onclick="resetDemoChat()" title="Reset Percakapan">
+              ↺
+            </button>
+          </div>
+
+          <div class="chat-body" id="chatBody">
+            <!-- User message -->
+            <div class="bubble bubble-user">
+              📸 <i>Foto struk belanjaan tadi sore ya Monee...</i>
+            </div>
+
+            <!-- Monee response with breakdown -->
+            <div class="bubble bubble-monee" id="moneeBubble">
+              <p>Halo Kakak! Monee sudah baca struknya nih ✨</p>
+              
+              <div class="bubble-receipt-card">
+                <div class="receipt-item">
+                  <span>🎧 Beli Headset</span>
+                  <b>Rp 220.000</b>
+                </div>
+                <div class="receipt-item">
+                  <span>☕ Kopi & Cilok</span>
+                  <b>Rp 32.000</b>
+                </div>
+                <div class="receipt-item">
+                  <span>🍳 Minyak & Gas</span>
+                  <b>Rp 123.000</b>
+                </div>
+                <hr style="border:none; border-top:1px dashed var(--border-subtle); margin:6px 0;">
+                <div class="receipt-item" style="font-weight:700; color:#D9534F;">
+                  <span>Total Pengeluaran</span>
+                  <span>Rp 375.000</span>
+                </div>
+              </div>
+
+              <p style="font-size:0.86rem; color:var(--ink-muted); margin-bottom:8px;">
+                Monee catat ke <b>BCA Utama</b> & <b>Kas Tunai</b> ya Kak?
+              </p>
+
+              <div class="chat-actions" id="chatActionButtons">
+                <button class="chat-btn chat-btn-confirm" onclick="confirmDemoTransaction()">
+                  ✅ Ya, Setuju Simpan
+                </button>
+                <button class="chat-btn chat-btn-cancel" onclick="showToast('Fitur edit tersedia di aplikasi!')">
+                  ✏️ Edit
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bento Grid Features Section -->
+    <section class="section" id="features">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-kicker" data-i18n="feat_kicker">Fitur Generasi Baru</span>
+          <h2 class="section-title" data-i18n="feat_title">Dirancang untuk Finansial Keluarga Nyata</h2>
+          <p class="section-desc" data-i18n="feat_desc">
+            Bukan sekadar kalkulator pengeluaran. Monee adalah rekan finansial keluarga yang ramah, teliti, dan selalu menghormati persetujuan Anda.
+          </p>
+        </div>
+
+        <div class="bento">
+          <!-- Card 1: Multimodal AI Receipt & Voice (Large) -->
+          <div class="card bento-col-2">
+            <div class="card-icon sky">📸</div>
+            <h3 class="card-title" data-i18n="card1_title">Multimodal AI: Scan Struk & Voice Note</h3>
+            <p class="card-desc" data-i18n="card1_desc">
+              Cukup kirim foto struk belanjaan fisik, screenshot bukti transfer e-wallet, atau voice note di WhatsApp/Telegram. Monee akan memisahkan tiap item belanjaan beserta nominalnya secara rapi tanpa harus mengetik manual.
+            </p>
+          </div>
+
+          <!-- Card 2: Human in the loop confirmation -->
+          <div class="card">
+            <div class="card-icon peach">🛡️</div>
+            <h3 class="card-title" data-i18n="card2_title">Human-in-the-Loop 100% Aman</h3>
+            <p class="card-desc" data-i18n="card2_desc">
+              Zero salah catat. Monee tidak pernah langsung merubah saldo sebelum Anda menekan tombol "✅ Setuju" di chat atau aplikasi.
+            </p>
+          </div>
+
+          <!-- Card 3: Multi-Wallet & Rekening Bersama -->
+          <div class="card">
+            <div class="card-icon mint">👨‍👩‍👧‍👦</div>
+            <h3 class="card-title" data-i18n="card3_title">Multi-Wallet & Akun Keluarga</h3>
+            <p class="card-desc" data-i18n="card3_desc">
+              Kelola rekening bersama suami-istri, uang jajan anak, dan kas harian keluarga. Pisahkan hak akses Manager dan Anggota keluarga dengan transparan.
+            </p>
+          </div>
+
+          <!-- Card 4: Sinking Funds (Pos Dana Siaga) -->
+          <div class="card">
+            <div class="card-icon butter">🎯</div>
+            <h3 class="card-title" data-i18n="card4_title">Pos Dana Siaga (Sinking Funds)</h3>
+            <p class="card-desc" data-i18n="card4_desc">
+              Nabung santai untuk pengeluaran besar terencana: Pajak Mobil Tahunan, Kurban Idul Adha, Dana Darurat, atau Liburan Keluarga dengan visualisasi progres interaktif.
+            </p>
+          </div>
+
+          <!-- Card 5: Recurring Bills Reminder -->
+          <div class="card">
+            <div class="card-icon indigo">⏰</div>
+            <h3 class="card-title" data-i18n="card5_title">Pengingat Tagihan Otomatis (07:00 WIB)</h3>
+            <p class="card-desc" data-i18n="card5_desc">
+              Jangan sampai terkena denda keterlambatan! Sistem secara cerdas mengirimkan laporan dan peringatan tagihan rutin tepat setiap jam 07:00 pagi.
+            </p>
+          </div>
+
+          <!-- Card 6: Privacy Blur Mode (Large) -->
+          <div class="card bento-col-2">
+            <div class="card-icon sky">🔒</div>
+            <h3 class="card-title" data-i18n="card6_title">Mode Sensor Privasi & Multi-Timezone Cerdas</h3>
+            <p class="card-desc" data-i18n="card6_desc">
+              Satu klik tombol sensor saldo saat membuka aplikasi di KRL, kafe, atau ruang publik. Dilengkapi deteksi otomatis zona waktu (WIB, WITA, WIT) agar waktu transaksi jurnal selalu akurat sesuai lokasi riil Anda.
+            </p>
+          </div>
+
+          <!-- Card 7: Offline First & Self Host -->
+          <div class="card">
+            <div class="card-icon peach">⚡</div>
+            <h3 class="card-title" data-i18n="card7_title">Self-Hostable & Bebas Iklan</h3>
+            <p class="card-desc" data-i18n="card7_desc">
+              Bisa dijalankan di komputer rumah atau VPS pribadi dengan Docker. Tidak ada iklan, tidak ada pelacak data pribadi, dan tanpa biaya langganan bulanan.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- How It Works Section -->
+    <section class="section" id="how" style="background: rgba(255, 255, 255, 0.4);">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-kicker" data-i18n="how_kicker">Langkah Mudah</span>
+          <h2 class="section-title" data-i18n="how_title">Mulai dalam 3 Langkah Praktis</h2>
+          <p class="section-desc" data-i18n="how_desc">
+            Tidak butuh konfigurasi rumit. Dalam 1 menit, keluarga Anda siap mencatat pengeluaran secara cerdas.
+          </p>
+        </div>
+
+        <div class="steps">
+          <div class="step-card">
+            <div class="step-badge">1</div>
+            <h3 class="step-title" data-i18n="step1_title">Unduh & Hubungkan Bot</h3>
+            <p class="step-desc" data-i18n="step1_desc">
+              Install aplikasi di Windows, Mac, Linux, atau buka versi Web. Cukup scan QR WhatsApp atau masukkan token bot Telegram Anda.
+            </p>
+          </div>
+
+          <div class="step-card">
+            <div class="step-badge">2</div>
+            <h3 class="step-title" data-i18n="step2_title">Kirim Chat, Foto, atau VN</h3>
+            <p class="step-desc" data-i18n="step2_desc">
+              Chat santai ke Monee: <i>"Beli kopi 22rb pake BCA"</i>, kirim voice note saat menyetir, atau jepret foto struk belanjaan minimarket.
+            </p>
+          </div>
+
+          <div class="step-card">
+            <div class="step-badge">3</div>
+            <h3 class="step-title" data-i18n="step3_title">Klik Setuju & Selesai!</h3>
+            <p class="step-desc" data-i18n="step3_desc">
+              Monee memverifikasi item dan saldo dompet. Cukup klik "✅ Setuju", saldo keluarga langsung tersinkronisasi otomatis seketika.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Download Section & Matrix -->
+    <section class="section" id="download">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-kicker" data-i18n="dl_kicker">Multi-Platform</span>
+          <h2 class="section-title" data-i18n="dl_title">Unduh Gratis untuk Semua Perangkat</h2>
+          <p class="section-desc" data-i18n="dl_desc">
+            Tersedia untuk Windows, macOS, Linux, dan Android. Seluruh rilisan diverifikasi langsung dari GitHub Releases resmi.
+          </p>
+        </div>
+
+        <div class="platforms">
+          <!-- Windows Card -->
+          <div class="platform-card" id="cardWindows">
+            <span class="os-tag" id="tagWindows">Sistem Anda</span>
+            <div class="platform-icon">🪟</div>
+            <h3 class="platform-name">Windows</h3>
+            <p class="platform-desc">Windows 10 / 11 (64-bit)</p>
+            <div class="platform-actions">
+              <a href="https://github.com/asepindrak/ini-uangku-apps/releases/latest" class="btn btn-primary" id="dlMsiBtn">
+                Unduh Installer (.msi)
+              </a>
+              <a href="https://github.com/asepindrak/ini-uangku-apps/releases/latest" class="btn btn-secondary" id="dlExeBtn">
+                Unduh Setup (.exe)
+              </a>
+              <div class="size-info" id="msiSize">Memuat ukuran...</div>
+            </div>
+          </div>
+
+          <!-- macOS Card -->
+          <div class="platform-card" id="cardMac">
+            <span class="os-tag" id="tagMac">Sistem Anda</span>
+            <div class="platform-icon">🍎</div>
+            <h3 class="platform-name">macOS</h3>
+            <p class="platform-desc">Universal (Apple Silicon & Intel)</p>
+            <div class="platform-actions">
+              <a href="https://github.com/asepindrak/ini-uangku-apps/releases/latest" class="btn btn-primary" id="dlDmgBtn">
+                Unduh Disk (.dmg)
+              </a>
+              <div class="size-info" id="dmgSize">Memuat ukuran...</div>
+            </div>
+          </div>
+
+          <!-- Linux Card -->
+          <div class="platform-card" id="cardLinux">
+            <span class="os-tag" id="tagLinux">Sistem Anda</span>
+            <div class="platform-icon">🐧</div>
+            <h3 class="platform-name">Linux</h3>
+            <p class="platform-desc">Ubuntu, Debian, Fedora (x64)</p>
+            <div class="platform-actions">
+              <a href="https://github.com/asepindrak/ini-uangku-apps/releases/latest" class="btn btn-primary" id="dlDebBtn">
+                Unduh Paket (.deb)
+              </a>
+              <a href="https://github.com/asepindrak/ini-uangku-apps/releases/latest" class="btn btn-secondary" id="dlAppImageBtn">
+                Unduh .AppImage
+              </a>
+              <div class="size-info" id="linuxSize">Memuat ukuran...</div>
+            </div>
+          </div>
+
+          <!-- Android Card -->
+          <div class="platform-card" id="cardAndroid">
+            <span class="os-tag" id="tagAndroid">Sistem Anda</span>
+            <div class="platform-icon">🤖</div>
+            <h3 class="platform-name">Android</h3>
+            <p class="platform-desc">Android 8.0 Oreo ke atas</p>
+            <div class="platform-actions">
+              <a href="https://github.com/asepindrak/ini-uangku-apps/releases/latest" class="btn btn-primary" id="dlApkBtn">
+                Unduh APK Langsung
+              </a>
+              <div class="size-info" id="apkSize">Memuat ukuran...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Web App Banner -->
+        <div class="webapp-banner">
+          <div class="webapp-info">
+            <h3 data-i18n="banner_title">Ingin Mencoba Langsung di Browser?</h3>
+            <p data-i18n="banner_desc">
+              Gunakan versi Cloud Web Instan tanpa perlu mengunduh aplikasi apapun. Cukup buka di browser laptop, iPad, atau HP Anda.
+            </p>
+          </div>
+          <a href="https://iniuangku.raydrop.web.id" target="_blank" class="btn btn-primary btn-large" data-i18n="banner_btn">
+            Buka Web App Sekarang →
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section class="section" id="faq">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-kicker">Tanya Jawab</span>
+          <h2 class="section-title" data-i18n="faq_title">Pertanyaan Umum (FAQ)</h2>
+          <p class="section-desc" data-i18n="faq_desc">
+            Segala hal yang perlu Anda ketahui mengenai keamanan, cara kerja bot, dan privasi keluarga.
+          </p>
+        </div>
+
+        <div class="faq-grid">
+          <div class="faq-item">
+            <h3 class="faq-q">💰 Apakah Ini Uangku & Monee gratis?</h3>
+            <p class="faq-a" data-i18n="faq_1_a">
+              Ya! Ini Uangku 100% open source dan gratis digunakan. Anda tidak akan dikenakan biaya langganan, tanpa iklan promosi yang mengganggu, dan kode sumber terbuka di GitHub.
+            </p>
+          </div>
+
+          <div class="faq-item">
+            <h3 class="faq-q">🖥️ Jika komputer rumah mati, apakah bot tetap jalan?</h3>
+            <p class="faq-a" data-i18n="faq_2_a">
+              Jika Anda menjalankan aplikasi di versi Desktop PC rumah, bot akan merespons selama aplikasi berjalan. Namun jika Anda menggunakan server web cloud kami atau memasang di Docker/VPS Anda sendiri, bot WhatsApp & Telegram akan aktif 24 jam nonstop tanpa perlu komputer rumah menyala!
+            </p>
+          </div>
+
+          <div class="faq-item">
+            <h3 class="faq-q">🔒 Apakah data keuangan keluarga saya aman?</h3>
+            <p class="faq-a" data-i18n="faq_3_a">
+              Sangat aman! Data finansial keluarga Anda diisolasi per akun keluarga dan hanya nomor WhatsApp / ID Telegram yang didaftarkan oleh Manager keluarga yang memiliki izin berinteraksi dengan Monee.
+            </p>
+          </div>
+
+          <div class="faq-item">
+            <h3 class="faq-q">📸 Bagaimana jika dalam satu struk ada banyak barang?</h3>
+            <p class="faq-a" data-i18n="faq_4_a">
+              Monee secara cerdas membedah setiap item secara terpisah ke dalam baris jurnal. Anda dapat melihat rincian belanjaan per kategori dengan jelas, bukan satu angka gelondongan.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <img src="/logo.png" alt="Ini Uangku" />
+        <span>Ini Uangku</span>
+        <span class="monee-pill">Monee AI</span>
+      </div>
+
+      <div class="footer-copy">
+        © 2026 Ini Uangku. Dibuat dengan 💖 untuk keluarga Indonesia.
+      </div>
+
+      <div class="footer-links">
+        <a href="https://iniuangku.raydrop.web.id" target="_blank">Web App</a>
+        <a href="https://github.com/asepindrak/ini-uangku-apps" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/asepindrak/ini-uangku-apps/releases" target="_blank" rel="noopener">Rilis</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Toast Notification element -->
+  <div class="toast" id="toast">
+    <span id="toastIcon">✨</span>
+    <span id="toastMsg">Pesan</span>
+  </div>
+
+  <!-- Client-Side Logic & Dynamic GitHub Release Fetcher -->
+  <script>
+    // 1. Bilingual Dictionaries (ID & EN)
+    const translations = {
+      id: {
+        page_title: "Ini Uangku — Asisten Finansial Keluarga AI Cerdas bersama Monee",
+        page_desc: "Kelola keuangan keluarga tanpa ribet bersama Monee AI. Pindai struk belanja, kirim voice note di WhatsApp atau Telegram, dan catat jurnal otomatis dengan konfirmasi persetujuan Anda.",
+        badge_prefix: "✨ Monee ",
+        badge_suffix: ": AI Asisten Finansial Keluarga Pintar",
+        nav_features: "Fitur Unggulan",
+        nav_how: "Cara Kerja",
+        nav_download: "Unduh",
+        nav_faq: "FAQ",
+        nav_webapp: "Buka Web",
+        nav_cta: "Download",
+        hero_title_1: "Kelola Keuangan Keluarga",
+        hero_title_2: "Bersama Monee AI",
+        hero_lead: "Bukan sekadar pencatat uang biasa. Foto struk belanja, kirim rekaman suara di WhatsApp atau Telegram, dan biarkan Monee merapikan jurnal keuangan keluarga dengan persetujuanmu. 100% transparan, aman, dan tanpa iklan.",
+        hero_cta_dl: "Download untuk Windows",
+        hero_cta_web: "Buka Web App",
+        meta_free: "100% Gratis & Open Source",
+        meta_multidevice: "Multi-Device Sync",
+        meta_privacy: "Privasi Terjaga",
+        widget_networth: "Kekayaan Bersih",
+        widget_fund: "Dana Liburan (75%)",
+        feat_kicker: "Fitur Generasi Baru",
+        feat_title: "Dirancang untuk Finansial Keluarga Nyata",
+        feat_desc: "Bukan sekadar kalkulator pengeluaran. Monee adalah rekan finansial keluarga yang ramah, teliti, dan selalu menghormati persetujuan Anda.",
+        card1_title: "Multimodal AI: Scan Struk & Voice Note",
+        card1_desc: "Cukup kirim foto struk belanjaan fisik, screenshot bukti transfer e-wallet, atau voice note di WhatsApp/Telegram. Monee akan memisahkan tiap item belanjaan beserta nominalnya secara rapi tanpa harus mengetik manual.",
+        card2_title: "Human-in-the-Loop 100% Aman",
+        card2_desc: "Zero salah catat. Monee tidak pernah langsung merubah saldo sebelum Anda menekan tombol '✅ Setuju' di chat atau aplikasi.",
+        card3_title: "Multi-Wallet & Akun Keluarga",
+        card3_desc: "Kelola rekening bersama suami-istri, uang jajan anak, dan kas harian keluarga. Pisahkan hak akses Manager dan Anggota keluarga dengan transparan.",
+        card4_title: "Pos Dana Siaga (Sinking Funds)",
+        card4_desc: "Nabung santai untuk pengeluaran besar terencana: Pajak Mobil Tahunan, Kurban Idul Adha, Dana Darurat, atau Liburan Keluarga dengan visualisasi progres interaktif.",
+        card5_title: "Pengingat Tagihan Otomatis (07:00 WIB)",
+        card5_desc: "Jangan sampai terkena denda keterlambatan! Sistem secara cerdas mengirimkan laporan dan peringatan tagihan rutin tepat setiap jam 07:00 pagi.",
+        card6_title: "Mode Sensor Privasi & Multi-Timezone Cerdas",
+        card6_desc: "Satu klik tombol sensor saldo saat membuka aplikasi di KRL, kafe, atau ruang publik. Dilengkapi deteksi otomatis zona waktu (WIB, WITA, WIT) agar waktu transaksi jurnal selalu akurat sesuai lokasi riil Anda.",
+        card7_title: "Self-Hostable & Bebas Iklan",
+        card7_desc: "Bisa dijalankan di komputer rumah atau VPS pribadi dengan Docker. Tidak ada iklan, tidak ada pelacak data pribadi, dan tanpa biaya langganan bulanan.",
+        how_kicker: "Langkah Mudah",
+        how_title: "Mulai dalam 3 Langkah Praktis",
+        how_desc: "Tidak butuh konfigurasi rumit. Dalam 1 menit, keluarga Anda siap mencatat pengeluaran secara cerdas.",
+        step1_title: "Unduh & Hubungkan Bot",
+        step1_desc: "Install aplikasi di Windows, Mac, Linux, atau buka versi Web. Cukup scan QR WhatsApp atau masukkan token bot Telegram Anda.",
+        step2_title: "Kirim Chat, Foto, atau VN",
+        step2_desc: "Chat santai ke Monee: 'Beli kopi 22rb pake BCA', kirim voice note saat menyetir, atau jepret foto struk belanjaan minimarket.",
+        step3_title: "Klik Setuju & Selesai!",
+        step3_desc: "Monee memverifikasi item dan saldo dompet. Cukup klik '✅ Setuju', saldo keluarga langsung tersinkronisasi otomatis seketika.",
+        dl_kicker: "Multi-Platform",
+        dl_title: "Unduh Gratis untuk Semua Perangkat",
+        dl_desc: "Tersedia untuk Windows, macOS, Linux, dan Android. Seluruh rilisan diverifikasi langsung dari GitHub Releases resmi.",
+        banner_title: "Ingin Mencoba Langsung di Browser?",
+        banner_desc: "Gunakan versi Cloud Web Instan tanpa perlu mengunduh aplikasi apapun. Cukup buka di browser laptop, iPad, atau HP Anda.",
+        banner_btn: "Buka Web App Sekarang →",
+        faq_title: "Pertanyaan Umum (FAQ)",
+        faq_desc: "Segala hal yang perlu Anda ketahui mengenai keamanan, cara kerja bot, dan privasi keluarga.",
+        faq_1_a: "Ya! Ini Uangku 100% open source dan gratis digunakan. Anda tidak akan dikenakan biaya langganan, tanpa iklan promosi yang mengganggu, dan kode sumber terbuka di GitHub.",
+        faq_2_a: "Jika Anda menjalankan aplikasi di versi Desktop PC rumah, bot akan merespons selama aplikasi berjalan. Namun jika Anda menggunakan server web cloud kami atau memasang di Docker/VPS Anda sendiri, bot WhatsApp & Telegram akan aktif 24 jam nonstop tanpa perlu komputer rumah menyala!",
+        faq_3_a: "Sangat aman! Data finansial keluarga Anda diisolasi per akun keluarga dan hanya nomor WhatsApp / ID Telegram yang didaftarkan oleh Manager keluarga yang memiliki izin berinteraksi dengan Monee.",
+        faq_4_a: "Monee secara cerdas membedah setiap item secara terpisah ke dalam baris jurnal. Anda dapat melihat rincian belanjaan per kategori dengan jelas, bukan satu angka gelondongan."
+      },
+      en: {
+        page_title: "Ini Uangku — Smart AI Family Financial Assistant with Monee",
+        page_desc: "Effortlessly manage family finances with Monee AI. Scan receipts, send voice notes on WhatsApp or Telegram, and log journals with human-in-the-loop approvals.",
+        badge_prefix: "✨ Monee ",
+        badge_suffix: ": Smart Family Financial AI Assistant",
+        nav_features: "Features",
+        nav_how: "How it Works",
+        nav_download: "Download",
+        nav_faq: "FAQ",
+        nav_webapp: "Open Web",
+        nav_cta: "Download",
+        hero_title_1: "Smart Family Finances",
+        hero_title_2: "Powered by Monee AI",
+        hero_lead: "Not just another expense tracker. Snap receipts, send voice notes in WhatsApp or Telegram, and let Monee organize your family ledger with your confirmation. 100% transparent, private, and ad-free.",
+        hero_cta_dl: "Download for Windows",
+        hero_cta_web: "Open Web App",
+        meta_free: "100% Free & Open Source",
+        meta_multidevice: "Multi-Device Sync",
+        meta_privacy: "100% Private",
+        widget_networth: "Net Worth",
+        widget_fund: "Vacation Fund (75%)",
+        feat_kicker: "Next-Gen Features",
+        feat_title: "Engineered for Real Family Finances",
+        feat_desc: "More than just an expense calculator. Monee is a polite, accurate family companion that always respects your approval.",
+        card1_title: "Multimodal AI: Receipt Scan & Voice Notes",
+        card1_desc: "Simply snap receipt photos, transfer screenshots, or voice notes on WhatsApp/Telegram. Monee itemizes each line item with exact prices automatically.",
+        card2_title: "100% Safe Human-in-the-Loop",
+        card2_desc: "Zero accidental ledger entries. Monee never alters balances until you click '✅ Confirm' in the chat or dashboard.",
+        card3_title: "Multi-Wallet & Family Sharing",
+        card3_desc: "Manage shared bank accounts, kids' pocket money, and household petty cash. Clean separation between Family Manager and Member roles.",
+        card4_title: "Sinking Funds (Targeted Savings)",
+        card4_desc: "Effortlessly save for big recurring expenses: annual vehicle tax, holiday trips, or emergency reserves with motivational progress bars.",
+        card5_title: "Automated Bill Reminders (07:00 AM)",
+        card5_desc: "Never miss a due date again! Automatic morning reminders keep family utilities, internet, and insurance bills on schedule.",
+        card6_title: "Privacy Blur & Smart Timezone",
+        card6_desc: "One-click privacy blur mode when opening in public spaces. Automatic timezone detection ensures timestamps match your exact location.",
+        card7_title: "Self-Hostable & Zero Ads",
+        card7_desc: "Deploy on your home desktop or VPS using Docker. Zero ads, zero third-party telemetry, and no monthly subscription fees.",
+        how_kicker: "Simple Steps",
+        how_title: "Start in 3 Easy Steps",
+        how_desc: "No complicated setup. In less than a minute, your family is ready to track finances with AI.",
+        step1_title: "Download & Connect Bot",
+        step1_desc: "Install on Windows, Mac, Linux, or open Web. Scan your WhatsApp QR or link your Telegram bot in one click.",
+        step2_title: "Send Chat, Photo, or Voice",
+        step2_desc: "Casually message Monee: 'Bought groceries $25 via Bank', send a voice note while driving, or snap a grocery receipt.",
+        step3_title: "Click Confirm & Done!",
+        step3_desc: "Monee itemizes and validates everything. Just click '✅ Confirm', and balances sync across all family devices instantly.",
+        dl_kicker: "Multi-Platform",
+        dl_title: "Free Download for All Devices",
+        dl_desc: "Available for Windows, macOS, Linux, and Android. All assets are automatically verified from official GitHub Releases.",
+        banner_title: "Want to try instantly in your browser?",
+        banner_desc: "Access the cloud web app with zero installation. Works smoothly on your laptop, iPad, or smartphone browser.",
+        banner_btn: "Open Web App Now →",
+        faq_title: "Frequently Asked Questions",
+        faq_desc: "Everything you need to know regarding family security, bot mechanics, and privacy.",
+        faq_1_a: "Yes! Ini Uangku is 100% open source and free. No subscriptions, no telemetry ads, with complete source code on GitHub.",
+        faq_2_a: "On Desktop, the bot responds while your app is running. If you deploy on Docker/VPS or use the web cloud, the WhatsApp & Telegram bots run 24/7 uninterrupted!",
+        faq_3_a: "Completely private! Data is isolated per family workspace, and only WhatsApp numbers or Telegram IDs whitelisted by the Manager can interact with Monee.",
+        faq_4_a: "Monee itemizes each line item separately into your journal. You can view expenses by item breakdown rather than one bulk number."
+      }
+    };
+
+    let currentLang = 'id';
+    let currentTag = 'v1.1.0';
+
+    function changeLanguage(lang) {
+      currentLang = lang;
+      localStorage.setItem('monee-lang', lang);
+
+      // Buttons active state
+      document.getElementById('langIdBtn').classList.toggle('active', lang === 'id');
+      document.getElementById('langEnBtn').classList.toggle('active', lang === 'en');
+
+      // Update document titles & meta
+      document.title = translations[lang].page_title;
+      document.getElementById('pageDesc').setAttribute('content', translations[lang].page_desc);
+      if (document.getElementById('ogTitle')) document.getElementById('ogTitle').setAttribute('content', translations[lang].page_title);
+      if (document.getElementById('ogDesc')) document.getElementById('ogDesc').setAttribute('content', translations[lang].page_desc);
+      if (document.getElementById('twTitle')) document.getElementById('twTitle').setAttribute('content', translations[lang].page_title);
+      if (document.getElementById('twDesc')) document.getElementById('twDesc').setAttribute('content', translations[lang].page_desc);
+
+      // Update badge
+      document.getElementById('badgeText').innerText = translations[lang].badge_prefix + currentTag + translations[lang].badge_suffix;
+
+      // Update all data-i18n elements
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        if (translations[lang] && translations[lang][key]) {
+          el.innerHTML = translations[lang][key];
+        }
+      });
+    }
+
+    // Initialize Language (Default to ID)
+    const savedLang = localStorage.getItem('monee-lang') || 'id';
+    changeLanguage(savedLang);
+
+    // 2. Theme Toggle (Light / Dark)
+    const themeToggleBtn = document.getElementById('themeToggle');
+    function setTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem('monee-theme', theme);
+    }
+
+    const savedTheme = localStorage.getItem('monee-theme');
+    if (savedTheme) {
+      setTheme(savedTheme);
+    }
+
+    themeToggleBtn.addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme') || 'light';
+      const next = current === 'dark' ? 'light' : 'dark';
+      setTheme(next);
+    });
+
+    // 3. Navbar scroll effect
+    const navbar = document.getElementById('navbar');
+    window.addEventListener('scroll', () => {
+      if (window.scrollY > 20) {
+        navbar.classList.add('is-scrolled');
+      } else {
+        navbar.classList.remove('is-scrolled');
+      }
+    }, { passive: true });
+
+    // 4. Interactive Hero Chat Demo
+    function confirmDemoTransaction() {
+      const chatBody = document.getElementById('chatBody');
+      const actionButtons = document.getElementById('chatActionButtons');
+      if (actionButtons) {
+        actionButtons.innerHTML = '<span style="color:#10B981; font-weight:700; font-size:0.86rem;">✅ Sudah Disetujui Kakak!</span>';
+      }
+
+      // Add user confirmation bubble
+      const userBubble = document.createElement('div');
+      userBubble.className = 'bubble bubble-user';
+      userBubble.innerText = '✅ Ya, tolong simpan ya Monee';
+      chatBody.appendChild(userBubble);
+
+      // Add Monee's cheerful response
+      setTimeout(() => {
+        const moneeReply = document.createElement('div');
+        moneeReply.className = 'bubble bubble-monee';
+        moneeReply.innerHTML = 'Siap Kakak! Sudah Monee catat ke jurnal yaa 💖 Saldo BCA Utama & Kas Tunai otomatis terpotong Rp 375.000.';
+        chatBody.appendChild(moneeReply);
+
+        // Update net worth widget
+        const nw = document.getElementById('netWorthDisplay');
+        if (nw) {
+          nw.innerText = 'Rp 48.125.000';
+          nw.style.color = '#FA9E90';
+          setTimeout(() => { nw.style.color = 'var(--ink)'; }, 1500);
+        }
+
+        showToast('🎉 Transaksi tersimpan ke jurnal keluarga!');
+      }, 600);
+    }
+
+    function resetDemoChat() {
+      location.reload();
+    }
+
+    // 5. Toast Notification
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      const toastMsg = document.getElementById('toastMsg');
+      toastMsg.innerText = msg;
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 3500);
+    }
+
+    // 6. Smart OS Detection & GitHub Release Fetcher
+    function detectUserOS() {
+      const ua = navigator.userAgent || '';
+      const platform = navigator.platform || '';
+      if (/Android/i.test(ua)) return 'android';
+      if (/Macintosh|MacIntel|MacPPC|Mac68K/i.test(platform) || /Mac OS X/i.test(ua)) return 'mac';
+      if (/Linux/i.test(platform) || /Linux/i.test(ua)) return 'linux';
+      return 'windows';
+    }
+
+    const userOS = detectUserOS();
+    if (userOS === 'android') {
+      const card = document.getElementById('cardAndroid');
+      if (card) card.classList.add('featured');
+      const tag = document.getElementById('tagAndroid');
+      if (tag) tag.style.display = 'block';
+    } else if (userOS === 'mac') {
+      const card = document.getElementById('cardMac');
+      if (card) card.classList.add('featured');
+      const tag = document.getElementById('tagMac');
+      if (tag) tag.style.display = 'block';
+    } else if (userOS === 'linux') {
+      const card = document.getElementById('cardLinux');
+      if (card) card.classList.add('featured');
+      const tag = document.getElementById('tagLinux');
+      if (tag) tag.style.display = 'block';
+    } else {
+      const card = document.getElementById('cardWindows');
+      if (card) card.classList.add('featured');
+      const tag = document.getElementById('tagWindows');
+      if (tag) tag.style.display = 'block';
+    }
+
+    // Fetch latest GitHub release dynamically
+    async function fetchLatestRelease() {
+      try {
+        const res = await fetch('https://api.github.com/repos/asepindrak/ini-uangku-apps/releases/latest');
+        if (!res.ok) {
+          fallbackSizes();
+          return;
+        }
+        const data = await res.json();
+        if (!data || !Array.isArray(data.assets)) {
+          fallbackSizes();
+          return;
+        }
+
+        currentTag = data.tag_name || 'v1.1.0';
+
+        // Update badge text
+        const badgeEl = document.getElementById('badgeText');
+        if (badgeEl && translations[currentLang]) {
+          badgeEl.innerText = translations[currentLang].badge_prefix + currentTag + translations[currentLang].badge_suffix;
+        }
+
+        // Assets extraction
+        const msiAsset = data.assets.find(a => a.name.endsWith('.msi'));
+        const exeAsset = data.assets.find(a => a.name.endsWith('.exe'));
+        const dmgAsset = data.assets.find(a => a.name.endsWith('.dmg'));
+        const debAsset = data.assets.find(a => a.name.endsWith('.deb'));
+        const appImageAsset = data.assets.find(a => a.name.endsWith('.AppImage'));
+        const apkAsset = data.assets.find(a => a.name.endsWith('.apk'));
+
+        const sizePrefix = currentLang === 'id' ? 'Ukuran: ' : 'Size: ';
+
+        if (msiAsset) {
+          const btn = document.getElementById('dlMsiBtn');
+          if (btn) btn.href = msiAsset.browser_download_url;
+          const mb = (msiAsset.size / (1024 * 1024)).toFixed(1);
+          const sizeEl = document.getElementById('msiSize');
+          if (sizeEl) sizeEl.innerText = sizePrefix + mb + ' MB (.msi)';
+        } else {
+          const sizeEl = document.getElementById('msiSize');
+          if (sizeEl) sizeEl.innerText = (currentLang === 'id' ? 'Tersedia di GitHub Releases' : 'Available on GitHub Releases');
+        }
+
+        if (exeAsset) {
+          const btn = document.getElementById('dlExeBtn');
+          if (btn) btn.href = exeAsset.browser_download_url;
+        }
+
+        if (dmgAsset) {
+          const btn = document.getElementById('dlDmgBtn');
+          if (btn) btn.href = dmgAsset.browser_download_url;
+          const mb = (dmgAsset.size / (1024 * 1024)).toFixed(1);
+          const sizeEl = document.getElementById('dmgSize');
+          if (sizeEl) sizeEl.innerText = sizePrefix + mb + ' MB';
+        } else {
+          const sizeEl = document.getElementById('dmgSize');
+          if (sizeEl) sizeEl.innerText = (currentLang === 'id' ? 'Tersedia di GitHub Releases' : 'Available on GitHub Releases');
+        }
+
+        if (debAsset) {
+          const btn = document.getElementById('dlDebBtn');
+          if (btn) btn.href = debAsset.browser_download_url;
+          const mb = (debAsset.size / (1024 * 1024)).toFixed(1);
+          const sizeEl = document.getElementById('linuxSize');
+          if (sizeEl) sizeEl.innerText = sizePrefix + mb + ' MB (.deb)';
+        } else {
+          const sizeEl = document.getElementById('linuxSize');
+          if (sizeEl) sizeEl.innerText = (currentLang === 'id' ? 'Tersedia di GitHub Releases' : 'Available on GitHub Releases');
+        }
+
+        if (appImageAsset) {
+          const btn = document.getElementById('dlAppImageBtn');
+          if (btn) btn.href = appImageAsset.browser_download_url;
+        }
+
+        if (apkAsset) {
+          const btn = document.getElementById('dlApkBtn');
+          if (btn) btn.href = apkAsset.browser_download_url;
+          const mb = (apkAsset.size / (1024 * 1024)).toFixed(1);
+          const sizeEl = document.getElementById('apkSize');
+          if (sizeEl) sizeEl.innerText = sizePrefix + mb + ' MB';
+        } else {
+          const sizeEl = document.getElementById('apkSize');
+          if (sizeEl) sizeEl.innerText = (currentLang === 'id' ? 'Tersedia di GitHub Releases' : 'Available on GitHub Releases');
+        }
+
+        // Hero CTA button adapts to detected user OS
+        const heroBtn = document.getElementById('primaryHeroDlBtn');
+        const heroText = document.getElementById('heroDlText');
+        if (userOS === 'android' && apkAsset) {
+          heroBtn.href = apkAsset.browser_download_url;
+          heroText.innerText = (currentLang === 'id' ? 'Unduh untuk Android (.apk)' : 'Download for Android (.apk)');
+        } else if (userOS === 'mac' && dmgAsset) {
+          heroBtn.href = dmgAsset.browser_download_url;
+          heroText.innerText = (currentLang === 'id' ? 'Unduh untuk macOS (.dmg)' : 'Download for macOS (.dmg)');
+        } else if (userOS === 'linux' && (debAsset || appImageAsset)) {
+          heroBtn.href = debAsset ? debAsset.browser_download_url : appImageAsset.browser_download_url;
+          heroText.innerText = (currentLang === 'id' ? 'Unduh untuk Linux (.deb)' : 'Download for Linux (.deb)');
+        } else if (msiAsset || exeAsset) {
+          heroBtn.href = msiAsset ? msiAsset.browser_download_url : (exeAsset ? exeAsset.browser_download_url : 'https://github.com/asepindrak/ini-uangku-apps/releases/latest');
+          heroText.innerText = (currentLang === 'id' ? 'Unduh untuk Windows (.msi)' : 'Download for Windows (.msi)');
+        }
+      } catch (err) {
+        console.warn('Gagal memuat rilis GitHub terbaru:', err);
+        fallbackSizes();
+      }
+    }
+
+    function fallbackSizes() {
+      const fallbackText = currentLang === 'id' ? 'Rilis Terbaru di GitHub' : 'Latest GitHub Release';
+      ['msiSize', 'dmgSize', 'linuxSize', 'apkSize'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerText = fallbackText;
+      });
+    }
+
+    fetchLatestRelease();
+  </script>
+</body>
+
+</html>

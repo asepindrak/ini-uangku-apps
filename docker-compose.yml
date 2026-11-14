@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # 1. Monee Official Modern Landing Page (monee.raydrop.web.id)
+  monee-landing:
+    build:
+      context: ./landing
+      dockerfile: Dockerfile
+    container_name: monee_landing
+    restart: unless-stopped
+    networks:
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=dokploy-network"
+      # HTTP -> HTTPS Redirect
+      - "traefik.http.middlewares.monee-landing-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.monee-landing-redirect.redirectscheme.permanent=true"
+      - "traefik.http.routers.monee-landing-web.rule=Host(`${LANDING_DOMAIN:-monee.raydrop.web.id}`)"
+      - "traefik.http.routers.monee-landing-web.entrypoints=web"
+      - "traefik.http.routers.monee-landing-web.middlewares=monee-landing-redirect"
+      # HTTPS (Port 443 with Let's Encrypt SSL)
+      - "traefik.http.routers.monee-landing.rule=Host(`${LANDING_DOMAIN:-monee.raydrop.web.id}`)"
+      - "traefik.http.routers.monee-landing.entrypoints=websecure"
+      - "traefik.http.routers.monee-landing.tls=true"
+      - "traefik.http.routers.monee-landing.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.monee-landing.service=monee-landing-svc"
+      - "traefik.http.services.monee-landing-svc.loadbalancer.server.port=80"
+
+  # 2. Ini Uangku Backend & API Service (iniuangku.raydrop.web.id)
+  iniuangku-server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: iniuangku_backend
+    restart: unless-stopped
+    env_file:
+      - ./server/.env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - PORT=${PORT:-3000}
+      - HOST=${HOST:-0.0.0.0}
+      - BAILEYS_AUTH_DIR=${BAILEYS_AUTH_DIR:-/app/baileys_auth}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - TZ=${TZ:-Asia/Jakarta}
+    volumes:
+      - baileys_data:/app/baileys_auth
+    networks:
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=dokploy-network"
+      # HTTP -> HTTPS Auto Redirect
+      - "traefik.http.middlewares.iniuangku-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.iniuangku-redirect.redirectscheme.permanent=true"
+      - "traefik.http.routers.iniuangku-web.rule=Host(`${SERVER_DOMAIN:-iniuangku.raydrop.web.id}`)"
+      - "traefik.http.routers.iniuangku-web.entrypoints=web"
+      - "traefik.http.routers.iniuangku-web.middlewares=iniuangku-redirect"
+      # HTTPS & WSS (Port 443 with Let's Encrypt SSL)
+      - "traefik.http.routers.iniuangku.rule=Host(`${SERVER_DOMAIN:-iniuangku.raydrop.web.id}`)"
+      - "traefik.http.routers.iniuangku.entrypoints=websecure"
+      - "traefik.http.routers.iniuangku.tls=true"
+      - "traefik.http.routers.iniuangku.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.iniuangku.service=iniuangku-svc"
+      - "traefik.http.services.iniuangku-svc.loadbalancer.server.port=3000"
+
+volumes:
+  baileys_data:
+    driver: local
+
+networks:
+  dokploy-network:
+    external: true

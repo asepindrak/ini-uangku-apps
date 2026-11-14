@@ -59,6 +59,15 @@ Aplikasi keuangan keluarga pintar multiplatform (**Windows, macOS, Linux, Androi
 
 ---
 
+## 🌐 Domain & Arsitektur Deployment (Dokploy + Traefik)
+
+- **Landing Page Resmi (Monee AI)**: [`https://monee.raydrop.web.id`](https://monee.raydrop.web.id)
+  - Arsitektur: Nginx Alpine mandiri (`landing/Dockerfile`), HTML statis performa tinggi, bilingual (ID / EN), integrasi dinamis GitHub Releases API untuk download otomatis installer (.msi, .exe, .dmg, .deb, .AppImage, .apk) sesuai OS pengunjung.
+- **Web App & Backend API**: [`https://iniuangku.raydrop.web.id`](https://iniuangku.raydrop.web.id)
+- **Deployment**: `docker-compose.yml` siap deploy di VPS dengan Traefik Let's Encrypt SSL otomatis.
+
+---
+
 ## 🗺️ Roadmap Fase Pengerjaan
 
 1. **Fase 1: Backend Server, PostgreSQL & Prisma ORM** (Skema tabel Family, User, Wallet, PendingAction, migrasi database, dan Dockerfile Dokploy).
