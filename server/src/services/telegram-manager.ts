@@ -265,10 +265,37 @@ export class TelegramManager {
       }
     }
 
-    // 3. Ambil context lengkap finansial keluarga (Dompet, Kategori, Transaksi Terkini, Ringkasan Bulanan)
-    const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    // 3. Konteks Waktu & Agregasi Temporal Finansial Keluarga
+    const now = new Date();
+    const currentDateIso = now.toISOString().split('T')[0];
+    const currentDateTimeFormatted = now.toLocaleDateString('id-ID', {
+      timeZone: 'Asia/Jakarta',
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }) + ' WIB';
 
-    const [wallets, categories, recentTransactions, monthlyAgg, sinkingFunds] = await Promise.all([
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+    const startOfThisYear = new Date(now.getFullYear(), 0, 1);
+
+    const [
+      wallets,
+      categories,
+      recentTransactions,
+      todayAgg,
+      yesterdayAgg,
+      thisMonthAgg,
+      lastMonthAgg,
+      thisYearAgg,
+      sinkingFunds,
+    ] = await Promise.all([
       prisma.wallet.findMany({
         where: { familyId },
         select: { id: true, name: true, type: true, balance: true },
@@ -280,16 +307,41 @@ export class TelegramManager {
       prisma.transaction.findMany({
         where: { familyId },
         orderBy: { transactionDate: 'desc' },
-        take: 20,
+        take: 35,
         include: {
           wallet: { select: { name: true } },
           category: { select: { name: true } },
           user: { select: { name: true } },
         },
       }),
+      // Hari ini
       prisma.transaction.groupBy({
         by: ['type'],
-        where: { familyId, transactionDate: { gte: startOfMonth } },
+        where: { familyId, transactionDate: { gte: startOfToday } },
+        _sum: { amount: true },
+      }),
+      // Kemarin
+      prisma.transaction.groupBy({
+        by: ['type'],
+        where: { familyId, transactionDate: { gte: startOfYesterday, lt: startOfToday } },
+        _sum: { amount: true },
+      }),
+      // Bulan ini
+      prisma.transaction.groupBy({
+        by: ['type'],
+        where: { familyId, transactionDate: { gte: startOfThisMonth } },
+        _sum: { amount: true },
+      }),
+      // Bulan lalu
+      prisma.transaction.groupBy({
+        by: ['type'],
+        where: { familyId, transactionDate: { gte: startOfLastMonth, lte: endOfLastMonth } },
+        _sum: { amount: true },
+      }),
+      // Tahun ini
+      prisma.transaction.groupBy({
+        by: ['type'],
+        where: { familyId, transactionDate: { gte: startOfThisYear } },
         _sum: { amount: true },
       }),
       prisma.sinkingFund.findMany({
@@ -298,23 +350,44 @@ export class TelegramManager {
       }),
     ]);
 
-    let totalExpense = 0;
-    let totalIncome = 0;
-    for (const g of monthlyAgg) {
-      const sum = Number(g._sum.amount) || 0;
-      if (g.type === 'EXPENSE') totalExpense += sum;
-      if (g.type === 'INCOME') totalIncome += sum;
-    }
+    const getSums = (aggList: any[]) => {
+      let expense = 0;
+      let income = 0;
+      for (const g of aggList) {
+        const sum = Number(g._sum.amount) || 0;
+        if (g.type === 'EXPENSE') expense += sum;
+        if (g.type === 'INCOME') income += sum;
+      }
+      return { expense, income };
+    };
 
-    const formattedRecent = recentTransactions.map((t) => ({
-      description: t.description,
-      amount: Number(t.amount),
-      type: t.type,
-      date: t.transactionDate.toISOString().split('T')[0],
-      walletName: t.wallet?.name || 'Dompet',
-      categoryName: t.category?.name || 'Umum',
-      userName: t.user?.name || 'Anggota',
-    }));
+    const todaySums = getSums(todayAgg);
+    const yesterdaySums = getSums(yesterdayAgg);
+    const thisMonthSums = getSums(thisMonthAgg);
+    const lastMonthSums = getSums(lastMonthAgg);
+    const thisYearSums = getSums(thisYearAgg);
+
+    const formattedRecent = recentTransactions.map((t) => {
+      const d = new Date(t.transactionDate);
+      const isToday = d.toDateString() === now.toDateString();
+      const yDay = new Date(now);
+      yDay.setDate(yDay.getDate() - 1);
+      const isYesterday = d.toDateString() === yDay.toDateString();
+      const relLabel = isToday ? 'Hari Ini' : isYesterday ? 'Kemarin' : d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+
+      return {
+        id: t.id,
+        description: t.description,
+        amount: Number(t.amount),
+        type: t.type,
+        date: d.toISOString().split('T')[0],
+        time: d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+        label: relLabel,
+        walletName: t.wallet?.name || 'Dompet',
+        categoryName: t.category?.name || 'Umum',
+        userName: t.user?.name || 'Anggota',
+      };
+    });
 
     const formattedSinking = sinkingFunds.map((s) => ({
       name: s.name,
@@ -360,9 +433,11 @@ export class TelegramManager {
 
     if (!textContent && !imageBase64 && !audioBase64) return;
 
-    // 6. Analisa Cerdas dengan AI (Deteksi Intensi: Konsultasi Keuangan vs Catat Transaksi)
+    // 6. Analisa Cerdas dengan AI (Kesadaran Waktu, CRUD Transaksi & Manajemen Finansial Lengkap)
     const processed = await LLMProviderService.processMessage({
       familyId,
+      currentDateIso,
+      currentDateTimeFormatted,
       rawText: textContent,
       imageBase64,
       imageMimeType: 'image/jpeg',
@@ -381,21 +456,78 @@ export class TelegramManager {
         alertThreshold: c.alertThreshold ? Number(c.alertThreshold) : undefined,
       })),
       recentTransactions: formattedRecent,
+      timeAggregations: {
+        todayExpense: todaySums.expense,
+        todayIncome: todaySums.income,
+        yesterdayExpense: yesterdaySums.expense,
+        yesterdayIncome: yesterdaySums.income,
+        thisMonthExpense: thisMonthSums.expense,
+        thisMonthIncome: thisMonthSums.income,
+        lastMonthExpense: lastMonthSums.expense,
+        lastMonthIncome: lastMonthSums.income,
+        thisYearExpense: thisYearSums.expense,
+        thisYearIncome: thisYearSums.income,
+      },
       monthlySummary: {
-        totalExpense,
-        totalIncome,
-        netBalance: totalIncome - totalExpense,
+        totalExpense: thisMonthSums.expense,
+        totalIncome: thisMonthSums.income,
+        netBalance: thisMonthSums.income - thisMonthSums.expense,
       },
       sinkingFunds: formattedSinking,
     });
 
-    // 7. Jika berupa Pertanyaan / Konsultasi Finansial
+    // 7. Jika berupa Pertanyaan / Konsultasi Finansial (Read / Analisis Waktu)
     if (processed.intent === 'FINANCIAL_CONSULTATION' && processed.replyText) {
       await ctx.reply(processed.replyText, { parse_mode: 'Markdown' });
       return;
     }
 
     // 8. Cabang berdasarkan Action Type Manajemen Keuangan:
+    if (processed.actionType === 'UPDATE_TRANSACTION') {
+      const summaryText =
+        `📋 *Draf Pembaruan (Edit) Transaksi:*\n` +
+        `${processed.summaryMessage || `• Ubah: ${processed.targetDescription}\n• Nominal Baru: Rp ${(processed.newAmount || 0).toLocaleString('id-ID')}`}\n\n` +
+        `👉 *Balas "Ya" untuk menyetujui pembaruan transaksi ini, atau ketik koreksi Anda.*`;
+
+      await ApprovalEngine.createPendingAction(
+        familyId,
+        user.id,
+        ActionType.UPDATE_TRANSACTION,
+        {
+          targetTransactionId: processed.targetTransactionId,
+          targetDescription: processed.targetDescription,
+          newAmount: processed.newAmount,
+          newDescription: processed.newDescription,
+          newDate: processed.newDate,
+          newWalletId: processed.newWalletId,
+          newCategoryId: processed.newCategoryId,
+        },
+        summaryText
+      );
+      await ctx.reply(summaryText, { parse_mode: 'Markdown' });
+      return;
+    }
+
+    if (processed.actionType === 'DELETE_TRANSACTION') {
+      const summaryText =
+        `📋 *Draf Penghapusan Transaksi:*\n` +
+        `${processed.summaryMessage || `• Hapus Transaksi: ${processed.targetDescription}`}\n\n` +
+        `👉 *Balas "Ya" untuk menyetujui penghapusan transaksi ini dan memulihkan saldo dompet.*`;
+
+      await ApprovalEngine.createPendingAction(
+        familyId,
+        user.id,
+        ActionType.DELETE_TRANSACTION,
+        {
+          targetTransactionId: processed.targetTransactionId,
+          targetDescription: processed.targetDescription,
+        },
+        summaryText
+      );
+      await ctx.reply(summaryText, { parse_mode: 'Markdown' });
+      return;
+    }
+
     if (processed.actionType === 'CREATE_WALLET') {
       const summaryText =
         `📋 *Draf Pembuatan Dompet Baru:*\n` +
@@ -542,12 +674,21 @@ export class TelegramManager {
     const hasMultipleItems = Array.isArray(processed.items) && processed.items.length > 1;
     let summaryText = '';
 
+    const effectiveDate = processed.transactionDate || currentDateIso;
+    const dateDisplay = new Date(effectiveDate).toLocaleDateString('id-ID', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+
     if (hasMultipleItems) {
       const itemsList = (processed.items || []).map((it, idx) => `  ${idx + 1}. ${it.name}: Rp ${((it.price || 0) * (it.qty || 1)).toLocaleString('id-ID')}`).join('\n');
       summaryText =
         `📋 *Draf Pencatatan Transaksi (${processed.items!.length} Item Terpisah):*\n` +
         itemsList +
         `\n\n• *Total*: Rp ${processed.amount.toLocaleString('id-ID')}\n` +
+        `• *Tanggal Transaksi*: ${dateDisplay}\n` +
         `• *Dompet*: ${targetWallet?.name || 'Utama'}\n` +
         `• *Kategori*: ${targetCategory?.name || 'Umum'}\n\n` +
         `👉 *Balas "Ya" untuk menyetujui dan mencatat tiap item satu-per-satu ke jurnal, atau ketik koreksi Anda.*`;
@@ -556,6 +697,7 @@ export class TelegramManager {
         `📋 *Draf Pencatatan Ditemukan:*\n` +
         `• *Keperluan*: ${processed.description}\n` +
         `• *Total*: Rp ${processed.amount.toLocaleString('id-ID')}\n` +
+        `• *Tanggal Transaksi*: ${dateDisplay}\n` +
         `• *Dompet*: ${targetWallet?.name || 'Utama'}\n` +
         `• *Kategori*: ${targetCategory?.name || 'Umum'}\n\n` +
         `👉 *Balas "Ya" untuk menyetujui, atau ketik koreksi Anda.*`;
@@ -567,6 +709,7 @@ export class TelegramManager {
       amount: processed.amount,
       description: processed.description || 'Pengeluaran Rumah Tangga',
       type: processed.type === 'INCOME' ? TransactionType.INCOME : TransactionType.EXPENSE,
+      transactionDate: effectiveDate,
       inputSource: imageBase64 ? InputSource.TELEGRAM_IMAGE_RECEIPT : audioBase64 ? InputSource.TELEGRAM_VOICE_NOTE : InputSource.TELEGRAM_TEXT,
       items: processed.items,
     };

@@ -158,6 +158,7 @@ export class ApprovalEngine {
                 type: type || TransactionType.EXPENSE,
                 amount: itemTotal,
                 description: itemDesc,
+                transactionDate: payload.transactionDate ? new Date(payload.transactionDate) : new Date(),
                 inputSource: inputSource || InputSource.WHATSAPP_TEXT,
                 rawMediaUrl: rawMediaUrl || null,
                 aiRawResponse: aiRawResponse || null,
@@ -207,6 +208,7 @@ export class ApprovalEngine {
               type: type || TransactionType.EXPENSE,
               amount: numAmount,
               description,
+              transactionDate: payload.transactionDate ? new Date(payload.transactionDate) : new Date(),
               inputSource: inputSource || InputSource.WHATSAPP_TEXT,
               rawMediaUrl: rawMediaUrl || null,
               aiRawResponse: aiRawResponse || null,
@@ -234,6 +236,139 @@ export class ApprovalEngine {
 
         successMessage = `✅ *Pencatatan Berhasil Disetujui!*\n• Transaksi: ${description}\n• Nominal: Rp ${numAmount.toLocaleString('id-ID')}\n• Dompet: ${updatedWallet?.name || 'Utama'}\n• Sisa Saldo: ${formattedBalance}`;
       }
+    } else if (pending.actionType === ActionType.UPDATE_TRANSACTION) {
+      const { targetTransactionId, targetDescription, newAmount, newDescription, newDate, newWalletId, newCategoryId } = payload;
+
+      let txRecord = null;
+      if (targetTransactionId) {
+        txRecord = await prisma.transaction.findFirst({
+          where: { id: targetTransactionId, familyId: pending.familyId },
+          include: { wallet: true, category: true },
+        });
+      }
+      if (!txRecord && targetDescription) {
+        txRecord = await prisma.transaction.findFirst({
+          where: {
+            familyId: pending.familyId,
+            description: { contains: targetDescription, mode: 'insensitive' },
+          },
+          orderBy: { transactionDate: 'desc' },
+          include: { wallet: true, category: true },
+        });
+      }
+
+      if (!txRecord) {
+        throw new Error('Transaksi yang ingin diubah tidak ditemukan dalam database.');
+      }
+
+      const oldAmount = Number(txRecord.amount);
+      const updatedAmount = newAmount !== undefined ? Math.abs(Number(newAmount)) : oldAmount;
+      const updatedWalletId = newWalletId || txRecord.walletId;
+      const updatedCategoryId = newCategoryId !== undefined ? newCategoryId : txRecord.categoryId;
+      const updatedDesc = newDescription || txRecord.description;
+      const updatedDate = newDate ? new Date(newDate) : txRecord.transactionDate;
+
+      await prisma.$transaction(async (tx) => {
+        // Revert wallet lama & apply ke wallet baru
+        if (txRecord.type === TransactionType.EXPENSE) {
+          await tx.wallet.update({
+            where: { id: txRecord.walletId },
+            data: { balance: { increment: oldAmount } },
+          });
+          await tx.wallet.update({
+            where: { id: updatedWalletId },
+            data: { balance: { decrement: updatedAmount } },
+          });
+        } else if (txRecord.type === TransactionType.INCOME) {
+          await tx.wallet.update({
+            where: { id: txRecord.walletId },
+            data: { balance: { decrement: oldAmount } },
+          });
+          await tx.wallet.update({
+            where: { id: updatedWalletId },
+            data: { balance: { increment: updatedAmount } },
+          });
+        }
+
+        await tx.transaction.update({
+          where: { id: txRecord.id },
+          data: {
+            amount: updatedAmount,
+            description: updatedDesc,
+            walletId: updatedWalletId,
+            categoryId: updatedCategoryId,
+            transactionDate: updatedDate,
+          },
+        });
+      });
+
+      const walletUpdated = await prisma.wallet.findUnique({ where: { id: updatedWalletId } });
+      const dateFormatted = updatedDate.toLocaleDateString('id-ID', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      });
+
+      successMessage =
+        `✏️ *Transaksi Berhasil Diperbarui!*\n` +
+        `• *Transaksi*: ${updatedDesc}\n` +
+        `• *Nominal*: Rp ${updatedAmount.toLocaleString('id-ID')} (Sebelumnya: Rp ${oldAmount.toLocaleString('id-ID')})\n` +
+        `• *Tanggal*: ${dateFormatted}\n` +
+        `• *Dompet*: ${walletUpdated?.name || 'Utama'} (Saldo: Rp ${Number(walletUpdated?.balance || 0).toLocaleString('id-ID')})`;
+    } else if (pending.actionType === ActionType.DELETE_TRANSACTION) {
+      const { targetTransactionId, targetDescription } = payload;
+
+      let txRecord = null;
+      if (targetTransactionId) {
+        txRecord = await prisma.transaction.findFirst({
+          where: { id: targetTransactionId, familyId: pending.familyId },
+          include: { wallet: true },
+        });
+      }
+      if (!txRecord && targetDescription) {
+        txRecord = await prisma.transaction.findFirst({
+          where: {
+            familyId: pending.familyId,
+            description: { contains: targetDescription, mode: 'insensitive' },
+          },
+          orderBy: { transactionDate: 'desc' },
+          include: { wallet: true },
+        });
+      }
+
+      if (!txRecord) {
+        throw new Error('Transaksi yang ingin dihapus tidak ditemukan dalam database.');
+      }
+
+      const txAmount = Number(txRecord.amount);
+
+      await prisma.$transaction(async (tx) => {
+        // Kembalikan saldo dompet
+        if (txRecord.type === TransactionType.EXPENSE) {
+          await tx.wallet.update({
+            where: { id: txRecord.walletId },
+            data: { balance: { increment: txAmount } },
+          });
+        } else if (txRecord.type === TransactionType.INCOME) {
+          await tx.wallet.update({
+            where: { id: txRecord.walletId },
+            data: { balance: { decrement: txAmount } },
+          });
+        }
+
+        await tx.transaction.delete({
+          where: { id: txRecord.id },
+        });
+      });
+
+      const walletRestored = await prisma.wallet.findUnique({ where: { id: txRecord.walletId } });
+
+      successMessage =
+        `🗑️ *Transaksi Berhasil Dihapus & Saldo Dipulihkan!*\n` +
+        `• *Transaksi Dihapus*: ${txRecord.description}\n` +
+        `• *Nominal*: Rp ${txAmount.toLocaleString('id-ID')}\n` +
+        `• *Dompet*: ${walletRestored?.name} (Saldo Sekarang: Rp ${Number(walletRestored?.balance || 0).toLocaleString('id-ID')})`;
     } else if (pending.actionType === ActionType.CREATE_WALLET) {
       const { name, type = 'BANK', initialBalance = 0 } = payload;
       const newWallet = await prisma.wallet.create({
