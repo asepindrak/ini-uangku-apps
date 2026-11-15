@@ -103,6 +103,17 @@ export async function botRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // POST Test Send WhatsApp
+  fastify.post('/test-send', async (request, reply) => {
+    const { jid, text } = request.body as any;
+    try {
+      const result = await BotGateway.sendWhatsAppMessage(jid, text || 'Test ping dari Monee');
+      return { success: true, result };
+    } catch (e: any) {
+      return reply.status(500).send({ success: false, error: e.message, stack: e.stack });
+    }
+  });
+
   // DELETE Hentikan dan Hapus Bot Telegram Keluarga
   fastify.delete('/telegram-config', async (request) => {
     const { familyId } = (request as any).user;
