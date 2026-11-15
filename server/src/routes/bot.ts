@@ -106,26 +106,13 @@ export async function botRoutes(fastify: FastifyInstance) {
   // POST Test Send WhatsApp
   fastify.post('/test-send', async (request, reply) => {
     const { jid, text } = request.body as any;
-    const sock = (BotGateway as any).waSock;
-    const wsReadyState = sock?.ws?.readyState;
-    const isConnected = BotGateway.isWaConnected;
-    const credsMe = sock?.authState?.creds?.me;
-
     try {
-      const sendPromise = BotGateway.sendWhatsAppMessage(jid, text || 'Test ping dari Monee');
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('sendMessage timed out after 7s')), 7000)
-      );
-
-      const result = await Promise.race([sendPromise, timeoutPromise]);
-      return { success: true, wsReadyState, isConnected, credsMe, result };
+      const result = await BotGateway.sendWhatsAppMessage(jid, text || 'Test ping dari Monee 🎀');
+      return { success: !!result, result: result?.key || null };
     } catch (e: any) {
       return reply.status(500).send({
         success: false,
         error: e.message,
-        wsReadyState,
-        isConnected,
-        credsMe,
       });
     }
   });

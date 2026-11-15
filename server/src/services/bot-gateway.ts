@@ -144,10 +144,10 @@ export class BotGateway {
 
     this.waSock = sock;
 
-    // Setiap kredensial diperbarui, simpan ke file lokal DAN backup otomatis ke PostgreSQL
+    // Setiap kredensial diperbarui, simpan ke file lokal DAN backup cepat creds.json ke PostgreSQL
     sock.ev.on('creds.update', async () => {
       await saveCreds();
-      await this.syncAuthToDB(authDir);
+      await this.syncCredsToDB(authDir);
     });
 
     sock.ev.on('connection.update', async (update) => {
@@ -1365,7 +1365,7 @@ export class BotGateway {
   }
 
   /**
-   * Kirim pesan teks WhatsApp ke nomor tertentu (Auto-resolve LID -> Phone JID, Support Quoted Msg)
+   * Kirim pesan teks WhatsApp ke nomor tertentu (Direct Session with Fallback & Non-blocking)
    */
   static async sendWhatsAppMessage(
     jid: string,
@@ -1376,29 +1376,19 @@ export class BotGateway {
       console.warn('Tidak dapat mengirim pesan WhatsApp: Baileys socket tidak aktif.');
       return null;
     }
+
+    const cleanTarget = jid.includes('@')
+      ? jid.split(':')[0] + '@' + jid.split('@')[1]
+      : `${jid}@s.whatsapp.net`;
+
+    const msgPayload: any = { text };
+    const sendOptions: any = {};
+    if (options?.quoted) {
+      sendOptions.quoted = options.quoted;
+    }
+
     try {
-      let targetJid = jid.trim();
-
-      // Jika target adalah LID, otomatis alihkan ke Phone JID (@s.whatsapp.net) yang terpetakan
-      if (targetJid.endsWith('@lid')) {
-        const rawLid = targetJid.split('@')[0]?.split(':')[0];
-        const mappedPn = this.lidToJidMap.get(targetJid) || this.lidToJidMap.get(rawLid);
-        if (mappedPn) {
-          targetJid = mappedPn.endsWith('@s.whatsapp.net') ? mappedPn : `${mappedPn}@s.whatsapp.net`;
-          console.log(`[WA Gateway] Mengalihkan tujuan pengiriman pesan dari LID ${jid} ke Phone JID ${targetJid}`);
-        }
-      }
-
-      const cleanTarget = targetJid.includes('@')
-        ? targetJid.split(':')[0] + '@' + targetJid.split('@')[1]
-        : `${targetJid}@s.whatsapp.net`;
-
-      const msgPayload: any = { text };
-      const sendOptions: any = {};
-      if (options?.quoted) {
-        sendOptions.quoted = options.quoted;
-      }
-
+      console.log(`[WA Gateway] Mengirim pesan ke ${cleanTarget}...`);
       const sent = await this.waSock.sendMessage(cleanTarget, msgPayload, sendOptions);
       if (sent?.key?.id) {
         this.sentMessageIds.add(sent.key.id);
@@ -1407,9 +1397,26 @@ export class BotGateway {
           if (first) this.sentMessageIds.delete(first);
         }
       }
+      console.log(`[WA Gateway] Pesan berhasil terkirim ke ${cleanTarget} (id: ${sent?.key?.id})`);
       return sent;
-    } catch (err) {
-      console.error('Error sending WhatsApp message to', jid, err);
+    } catch (err: any) {
+      console.error(`[WA Gateway] Gagal mengirim pesan ke ${cleanTarget}:`, err?.message || err);
+
+      // Fallback: Jika gagal ke LID, coba kirim ke Phone JID jika ada pemetaannya
+      if (cleanTarget.endsWith('@lid')) {
+        const rawLid = cleanTarget.split('@')[0]?.split(':')[0];
+        const mappedPn = this.lidToJidMap.get(cleanTarget) || this.lidToJidMap.get(rawLid);
+        if (mappedPn && !mappedPn.endsWith('@lid')) {
+          const fallbackTarget = mappedPn.endsWith('@s.whatsapp.net') ? mappedPn : `${mappedPn}@s.whatsapp.net`;
+          console.log(`[WA Gateway] Mencoba fallback pengiriman ke Phone JID ${fallbackTarget}...`);
+          try {
+            const fallbackSent = await this.waSock.sendMessage(fallbackTarget, msgPayload);
+            return fallbackSent;
+          } catch (fallbackErr) {
+            console.error(`[WA Gateway] Fallback ke ${fallbackTarget} juga gagal:`, fallbackErr);
+          }
+        }
+      }
       return null;
     }
   }
@@ -1437,23 +1444,47 @@ export class BotGateway {
   }
 
   /**
-   * Auto-Backup / Sinkronisasi berkas auth Baileys ke PostgreSQL
+   * Backup cepat creds.json ke PostgreSQL (Sangat cepat < 20ms, tidak membekukan event loop)
+   */
+  private static async syncCredsToDB(authDir: string) {
+    try {
+      const credsFile = path.join(authDir, 'creds.json');
+      if (fs.existsSync(credsFile)) {
+        const content = fs.readFileSync(credsFile, 'utf-8');
+        await prisma.botSession.upsert({
+          where: { key: 'creds.json' },
+          create: { key: 'creds.json', data: content },
+          update: { data: content },
+        });
+      }
+    } catch (err) {
+      console.warn('Gagal menyinkronkan creds.json ke DB:', err);
+    }
+  }
+
+  /**
+   * Auto-Backup / Sinkronisasi berkas auth Baileys ke PostgreSQL (Non-blocking background)
    */
   private static async syncAuthToDB(authDir: string) {
     try {
       if (!fs.existsSync(authDir)) return;
       const files = fs.readdirSync(authDir).filter((f) => f.endsWith('.json'));
-      for (const file of files) {
-        const filePath = path.join(authDir, file);
-        if (fs.existsSync(filePath)) {
-          const content = fs.readFileSync(filePath, 'utf-8');
-          await prisma.botSession.upsert({
-            where: { key: file },
-            create: { key: file, data: content },
-            update: { data: content },
-          });
+      // Jalankan di background tanpa memblokir socket
+      setImmediate(async () => {
+        for (const file of files) {
+          const filePath = path.join(authDir, file);
+          if (fs.existsSync(filePath)) {
+            try {
+              const content = fs.readFileSync(filePath, 'utf-8');
+              await prisma.botSession.upsert({
+                where: { key: file },
+                create: { key: file, data: content },
+                update: { data: content },
+              });
+            } catch (_) {}
+          }
         }
-      }
+      });
     } catch (err) {
       console.warn('Gagal menyinkronkan sesi ke DB:', err);
     }
