@@ -16,6 +16,7 @@
   import BotStatusModal from './lib/components/BotStatusModal.svelte';
   import LLMSettingsModal from './lib/components/LLMSettingsModal.svelte';
   import EditProfileModal from './lib/components/EditProfileModal.svelte';
+  import CategoryManagementModal from './lib/components/CategoryManagementModal.svelte';
   import UpdateModal from './lib/components/UpdateModal.svelte';
   import AuthModal from './lib/components/AuthModal.svelte';
   import ToastContainer from './lib/components/ToastContainer.svelte';
@@ -36,6 +37,7 @@
   let isBotStatusOpen = false;
   let isLLMSettingsOpen = false;
   let isProfileOpen = false;
+  let isCategoriesOpen = false;
   let initialInviteCode = '';
 
   onMount(async () => {
@@ -124,6 +126,7 @@
       onOpenPending={() => (isPendingOpen = true)}
       onOpenLLMSettings={() => (isLLMSettingsOpen = true)}
       onOpenProfile={() => (isProfileOpen = true)}
+      onOpenCategories={() => (isCategoriesOpen = true)}
     />
 
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 w-full space-y-8 flex-1">
@@ -170,6 +173,7 @@
         <TransactionExplorer
           {wallets}
           onTransactionChanged={loadDashboardData}
+          onOpenCategories={() => (isCategoriesOpen = true)}
         />
       {:else if activeView === 'reports'}
         <!-- Financial Cash Flow, Budget & Sinking Fund Reports -->
@@ -204,6 +208,12 @@
     <EditProfileModal
       isOpen={isProfileOpen}
       onClose={() => (isProfileOpen = false)}
+    />
+
+    <CategoryManagementModal
+      isOpen={isCategoriesOpen}
+      onClose={() => (isCategoriesOpen = false)}
+      onCategoryChanged={loadDashboardData}
     />
 
     <UpdateModal />

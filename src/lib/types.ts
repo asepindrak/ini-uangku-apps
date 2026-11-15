@@ -40,8 +40,10 @@ export interface Category {
   icon: string;
   color: string;
   type: TransactionType;
-  monthlyBudget?: number;
+  monthlyBudget?: number | null;
   alertThreshold: number;
+  transactionCount?: number;
+  createdAt?: string;
 }
 
 export interface Transaction {

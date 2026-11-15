@@ -76,6 +76,12 @@ export const api = {
   deleteWallet: (id: string) => request<any>(`/api/wallets/${id}`, { method: 'DELETE' }),
   setDefaultWallet: (id: string) => request<any>(`/api/wallets/${id}/set-default`, { method: 'POST', body: JSON.stringify({}) }),
 
+  // Categories
+  getCategories: () => request<any[]>('/api/categories'),
+  createCategory: (data: any) => request<any>('/api/categories', { method: 'POST', body: JSON.stringify(data) }),
+  updateCategory: (id: string, data: any) => request<any>(`/api/categories/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteCategory: (id: string) => request<any>(`/api/categories/${id}`, { method: 'DELETE' }),
+
   // Transactions
   getTransactions: (params: string = '') => request<any[]>(`/api/transactions${params}`),
   getSummary: () => request<any>('/api/transactions/summary'),

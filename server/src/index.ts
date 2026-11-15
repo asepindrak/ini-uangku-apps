@@ -11,6 +11,7 @@ import { connectDB } from './db.js';
 import { authRoutes } from './routes/auth.js';
 import { familyRoutes } from './routes/family.js';
 import { walletRoutes } from './routes/wallets.js';
+import { categoryRoutes } from './routes/categories.js';
 import { transactionRoutes } from './routes/transactions.js';
 import { sinkingFundRoutes } from './routes/sinking-funds.js';
 import { assetDebtRoutes } from './routes/assets-debts.js';
@@ -65,6 +66,7 @@ fastify.get('/health', async () => {
 await fastify.register(authRoutes, { prefix: '/api/auth' });
 await fastify.register(familyRoutes, { prefix: '/api/family' });
 await fastify.register(walletRoutes, { prefix: '/api/wallets' });
+await fastify.register(categoryRoutes, { prefix: '/api/categories' });
 await fastify.register(transactionRoutes, { prefix: '/api/transactions' });
 await fastify.register(sinkingFundRoutes, { prefix: '/api/sinking-funds' });
 await fastify.register(assetDebtRoutes, { prefix: '/api/assets-debts' });

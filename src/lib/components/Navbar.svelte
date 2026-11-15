@@ -23,6 +23,7 @@
     FileText,
     Wallet,
     ChevronDown,
+    Layers,
   } from "lucide-svelte";
   import logoImg from "../../assets/logo.png";
 
@@ -37,6 +38,7 @@
   export let onOpenPending: () => void;
   export let onOpenLLMSettings: () => void;
   export let onOpenProfile: () => void;
+  export let onOpenCategories: () => void;
 
   let logoError = false;
   let isProfileMenuOpen = false;
@@ -283,6 +285,19 @@
                 >
                   <Users class="w-4 h-4 text-brand-peach-dark shrink-0" />
                   <span>Kelola Keluarga & Anggota</span>
+                </button>
+
+                <!-- Menu Item: Kategori & Anggaran -->
+                <button
+                  type="button"
+                  on:click={() => {
+                    isProfileMenuOpen = false;
+                    onOpenCategories();
+                  }}
+                  class="w-full flex items-center gap-2.5 px-3 py-2 rounded-2xl text-xs font-semibold text-brand-indigo/80 hover:text-brand-indigo hover:bg-brand-mint/30 transition text-left"
+                >
+                  <Layers class="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Kategori Pengeluaran & Budget</span>
                 </button>
 
                 <!-- Menu Item: Status Bot Monee -->

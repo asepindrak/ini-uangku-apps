@@ -23,18 +23,22 @@
     RefreshCw,
     X,
     SlidersHorizontal,
+    Layers,
   } from 'lucide-svelte';
 
   export let wallets: Wallet[] = [];
   export let onTransactionChanged: () => void = () => {};
+  export let onOpenCategories: (() => void) | undefined = undefined;
 
   let transactions: Transaction[] = [];
+  let categories: any[] = [];
   let isLoading = false;
 
   // Filter states
   let searchQuery = '';
   let selectedWalletId = 'ALL';
   let selectedType = 'ALL';
+  let selectedCategoryId = 'ALL';
   let selectedDatePreset: 'all' | 'today' | 'yesterday' | '7d' | 'this_month' | 'last_month' | 'custom' = 'all';
   let startDate = '';
   let endDate = '';
@@ -42,9 +46,18 @@
   let deletingId: string | null = null;
   let confirmDeleteTx: Transaction | null = null;
 
-  onMount(() => {
+  onMount(async () => {
     fetchFilteredTransactions();
+    loadCategories();
   });
+
+  async function loadCategories() {
+    try {
+      categories = await api.getCategories();
+    } catch (e) {
+      console.warn('Gagal memuat kategori:', e);
+    }
+  }
 
   export async function fetchFilteredTransactions() {
     isLoading = true;
@@ -53,6 +66,7 @@
       if (searchQuery.trim()) params.append('search', searchQuery.trim());
       if (selectedWalletId !== 'ALL') params.append('walletId', selectedWalletId);
       if (selectedType !== 'ALL') params.append('type', selectedType);
+      if (selectedCategoryId !== 'ALL') params.append('categoryId', selectedCategoryId);
 
       // Apply date preset
       const now = new Date();
@@ -200,6 +214,17 @@
 
     <!-- Export & Print Actions -->
     <div class="flex items-center gap-2">
+      {#if onOpenCategories}
+        <button
+          on:click={onOpenCategories}
+          class="inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-brand-mint/30 hover:bg-brand-mint/50 border border-brand-mint/60 text-xs font-bold text-brand-indigo shadow-xs transition"
+          title="Kelola Kategori Keuangan & Budget"
+        >
+          <Layers class="w-3.5 h-3.5 text-emerald-700" />
+          <span class="hidden sm:inline">Kelola Kategori</span>
+        </button>
+      {/if}
+
       <button
         on:click={exportCSV}
         class="inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-white/80 hover:bg-white border border-white/90 text-xs font-bold text-brand-indigo shadow-xs transition"
@@ -233,7 +258,7 @@
     <!-- Row 1: Search & Dropdowns -->
     <div class="grid grid-cols-1 sm:grid-cols-12 gap-3">
       <!-- Search Input -->
-      <div class="sm:col-span-6 relative">
+      <div class="sm:col-span-4 relative">
         <Search class="w-4 h-4 absolute left-3.5 top-3 text-brand-indigo/40" />
         <input
           type="text"
@@ -267,15 +292,31 @@
       </div>
 
       <!-- Type Dropdown -->
-      <div class="sm:col-span-3">
+      <div class="sm:col-span-2">
         <select
           bind:value={selectedType}
           on:change={() => fetchFilteredTransactions()}
           class="w-full px-3 py-2 bg-white/90 border border-white/80 rounded-2xl text-xs font-bold text-brand-indigo shadow-xs outline-none focus:ring-2 focus:ring-brand-sky"
         >
           <option value="ALL">Semua Tipe</option>
-          <option value="EXPENSE">🔴 Hanya Pengeluaran</option>
-          <option value="INCOME">🟢 Hanya Pemasukan</option>
+          <option value="EXPENSE">🔴 Pengeluaran</option>
+          <option value="INCOME">🟢 Pemasukan</option>
+        </select>
+      </div>
+
+      <!-- Category Dropdown -->
+      <div class="sm:col-span-3">
+        <select
+          bind:value={selectedCategoryId}
+          on:change={() => fetchFilteredTransactions()}
+          class="w-full px-3 py-2 bg-white/90 border border-white/80 rounded-2xl text-xs font-bold text-brand-indigo shadow-xs outline-none focus:ring-2 focus:ring-brand-sky"
+        >
+          <option value="ALL">Semua Kategori</option>
+          {#each categories as cat}
+            <option value={cat.id}>
+              {cat.type === 'EXPENSE' ? '💸' : '💰'} {cat.name}
+            </option>
+          {/each}
         </select>
       </div>
     </div>
