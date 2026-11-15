@@ -33,8 +33,16 @@
   let isBotStatusOpen = false;
   let isLLMSettingsOpen = false;
   let isProfileOpen = false;
+  let initialInviteCode = '';
 
   onMount(async () => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
+      if (code) {
+        initialInviteCode = code.trim().toUpperCase();
+      }
+    }
     if ($auth.isAuthenticated) {
       await loadDashboardData();
     }
@@ -95,7 +103,7 @@
 </script>
 
 {#if !$auth.isAuthenticated}
-  <AuthModal onLoginSuccess={loadDashboardData} />
+  <AuthModal onLoginSuccess={loadDashboardData} {initialInviteCode} />
 {:else}
   <div class="min-h-screen flex flex-col pb-16">
     <Navbar

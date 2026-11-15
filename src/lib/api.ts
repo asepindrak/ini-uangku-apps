@@ -54,6 +54,8 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 export const api = {
   // Auth
   register: (data: any) => request<any>('/api/auth/register', { method: 'POST', body: JSON.stringify(data) }),
+  joinFamily: (data: any) => request<any>('/api/auth/join', { method: 'POST', body: JSON.stringify(data) }),
+  getInviteInfo: (code: string) => request<any>(`/api/auth/invite-info?code=${encodeURIComponent(code)}`),
   login: (data: any) => request<any>('/api/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   getProfile: () => request<any>('/api/auth/me'),
   updateMyProfile: (data: any) => request<any>('/api/auth/me', { method: 'PUT', body: JSON.stringify(data) }),

@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import bcrypt from 'bcryptjs';
 import { prisma } from '../db.js';
 import { UserRole } from '@prisma/client';
 import { normalizePhone } from '../utils/phone.js';
@@ -34,7 +35,15 @@ export async function familyRoutes(fastify: FastifyInstance) {
       return reply.status(403).send({ error: 'Hanya Manager keluarga yang dapat menambahkan anggota.' });
     }
 
-    const { name, countryCode = '+62', whatsappNumber, telegramChatId, role = UserRole.MEMBER } = request.body as any;
+    const {
+      name,
+      countryCode = '+62',
+      whatsappNumber,
+      telegramChatId,
+      email,
+      password,
+      role = UserRole.MEMBER,
+    } = request.body as any;
 
     if (!name) {
       return reply.status(400).send({ error: 'Nama anggota wajib diisi.' });
@@ -44,10 +53,32 @@ export async function familyRoutes(fastify: FastifyInstance) {
     const cleanPhone = phoneNorm.cleanDigits || null;
     const fullJid = phoneNorm.whatsappJid || null;
 
+    if (fullJid) {
+      const existing = await prisma.user.findFirst({ where: { whatsappJid: fullJid } });
+      if (existing) {
+        return reply.status(400).send({ error: 'Nomor WhatsApp ini sudah terdaftar pada pengguna/keluarga lain.' });
+      }
+    }
+
+    let cleanEmail: string | null = null;
+    let passwordHash: string | null = null;
+    if (email) {
+      cleanEmail = String(email).trim().toLowerCase();
+      const existingEmail = await prisma.user.findUnique({ where: { email: cleanEmail } });
+      if (existingEmail) {
+        return reply.status(400).send({ error: 'Email ini sudah terdaftar pada akun lain.' });
+      }
+      if (password) {
+        passwordHash = await bcrypt.hash(password, 10);
+      }
+    }
+
     const newMember = await prisma.user.create({
       data: {
         familyId,
-        name,
+        name: name.trim(),
+        email: cleanEmail,
+        passwordHash,
         role: role === 'MANAGER' ? UserRole.MANAGER : UserRole.MEMBER,
         countryCode: phoneNorm.countryCode,
         whatsappNumber: cleanPhone,
@@ -70,28 +101,29 @@ export async function familyRoutes(fastify: FastifyInstance) {
           familyId,
           platform: 'WHATSAPP',
           identifier: fullJid,
-          name,
+          name: newMember.name,
         },
-        update: { name },
+        update: { name: newMember.name },
       });
     }
 
     if (telegramChatId) {
+      const cleanTg = String(telegramChatId).trim();
       await prisma.botWhitelist.upsert({
         where: {
           familyId_platform_identifier: {
             familyId,
             platform: 'TELEGRAM',
-            identifier: String(telegramChatId).trim(),
+            identifier: cleanTg,
           },
         },
         create: {
           familyId,
           platform: 'TELEGRAM',
-          identifier: String(telegramChatId).trim(),
-          name,
+          identifier: cleanTg,
+          name: newMember.name,
         },
-        update: { name },
+        update: { name: newMember.name },
       });
     }
 
@@ -100,18 +132,42 @@ export async function familyRoutes(fastify: FastifyInstance) {
 
   // Hapus Anggota
   fastify.delete('/members/:id', async (request, reply) => {
-    const { familyId, role } = (request as any).user;
+    const { familyId, role, userId } = (request as any).user;
     const { id } = request.params as any;
 
     if (role !== UserRole.MANAGER) {
       return reply.status(403).send({ error: 'Hanya Manager yang dapat menghapus anggota.' });
     }
 
-    await prisma.user.deleteMany({
+    if (id === userId) {
+      return reply.status(400).send({ error: 'Manager tidak dapat menghapus akunnya sendiri.' });
+    }
+
+    const targetMember = await prisma.user.findFirst({
       where: { id, familyId },
     });
 
-    return { success: true };
+    if (!targetMember) {
+      return reply.status(404).send({ error: 'Anggota tidak ditemukan.' });
+    }
+
+    // Bersihkan dari BotWhitelist
+    if (targetMember.whatsappJid) {
+      await prisma.botWhitelist.deleteMany({
+        where: { familyId, platform: 'WHATSAPP', identifier: targetMember.whatsappJid },
+      });
+    }
+    if (targetMember.telegramChatId) {
+      await prisma.botWhitelist.deleteMany({
+        where: { familyId, platform: 'TELEGRAM', identifier: targetMember.telegramChatId },
+      });
+    }
+
+    await prisma.user.delete({
+      where: { id: targetMember.id },
+    });
+
+    return { success: true, message: `Anggota ${targetMember.name} berhasil dihapus dari keluarga.` };
   });
 
   // Get Family Profile (Termasuk Timezone)

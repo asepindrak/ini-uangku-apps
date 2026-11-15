@@ -105,6 +105,167 @@ export async function authRoutes(fastify: FastifyInstance) {
     };
   });
 
+  // Verifikasi info keluarga dari kode undangan (Public - untuk halaman join)
+  fastify.get('/invite-info', async (request, reply) => {
+    const { code } = request.query as any;
+    if (!code) {
+      return reply.status(400).send({ error: 'Kode undangan wajib disertakan.' });
+    }
+
+    const cleanCode = String(code).trim().toUpperCase();
+    const family = await prisma.family.findUnique({
+      where: { inviteCode: cleanCode },
+      include: {
+        users: {
+          where: { role: UserRole.MANAGER },
+          select: { name: true },
+          take: 1,
+        },
+      },
+    });
+
+    if (!family) {
+      return reply.status(404).send({ error: 'Kode undangan tidak valid atau keluarga tidak ditemukan.' });
+    }
+
+    return {
+      isValid: true,
+      inviteCode: family.inviteCode,
+      familyName: family.name,
+      managerName: family.users[0]?.name || 'Manager Keluarga',
+    };
+  });
+
+  // Gabung Keluarga menggunakan Kode Undangan
+  fastify.post('/join', async (request, reply) => {
+    const {
+      inviteCode,
+      name,
+      email,
+      password,
+      whatsappNumber,
+      countryCode = '+62',
+      telegramChatId,
+    } = request.body as any;
+
+    if (!inviteCode) {
+      return reply.status(400).send({ error: 'Kode undangan keluarga wajib diisi.' });
+    }
+    if (!name || !email || !password) {
+      return reply.status(400).send({ error: 'Nama lengkap, email, dan kata sandi wajib diisi.' });
+    }
+
+    const cleanCode = String(inviteCode).trim().toUpperCase();
+    const family = await prisma.family.findUnique({
+      where: { inviteCode: cleanCode },
+    });
+
+    if (!family) {
+      return reply.status(404).send({ error: 'Kode undangan tidak valid atau keluarga tidak ditemukan.' });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const existingEmail = await prisma.user.findUnique({ where: { email: cleanEmail } });
+    if (existingEmail) {
+      return reply.status(400).send({ error: 'Email ini sudah terdaftar pada akun lain.' });
+    }
+
+    const phoneNorm = normalizePhone(whatsappNumber, countryCode);
+    const cleanPhone = phoneNorm.cleanDigits || null;
+    const fullJid = phoneNorm.whatsappJid || null;
+
+    if (fullJid) {
+      const existingPhone = await prisma.user.findFirst({
+        where: { whatsappJid: fullJid },
+      });
+      if (existingPhone) {
+        return reply.status(400).send({ error: 'Nomor WhatsApp ini sudah terdaftar pada pengguna lain.' });
+      }
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    const user = await prisma.$transaction(async (tx) => {
+      const newUser = await tx.user.create({
+        data: {
+          familyId: family.id,
+          name: name.trim(),
+          email: cleanEmail,
+          passwordHash,
+          role: UserRole.MEMBER,
+          countryCode: phoneNorm.countryCode,
+          whatsappNumber: cleanPhone,
+          whatsappJid: fullJid,
+          telegramChatId: telegramChatId ? String(telegramChatId).trim() : null,
+        },
+      });
+
+      // Otomatis daftarkan nomor WA ke bot whitelist keluarga
+      if (fullJid) {
+        await tx.botWhitelist.upsert({
+          where: {
+            familyId_platform_identifier: {
+              familyId: family.id,
+              platform: 'WHATSAPP',
+              identifier: fullJid,
+            },
+          },
+          create: {
+            familyId: family.id,
+            platform: 'WHATSAPP',
+            identifier: fullJid,
+            name: newUser.name,
+          },
+          update: { name: newUser.name },
+        });
+      }
+
+      // Otomatis daftarkan Telegram ke bot whitelist jika diisi
+      if (telegramChatId) {
+        const cleanTg = String(telegramChatId).trim();
+        await tx.botWhitelist.upsert({
+          where: {
+            familyId_platform_identifier: {
+              familyId: family.id,
+              platform: 'TELEGRAM',
+              identifier: cleanTg,
+            },
+          },
+          create: {
+            familyId: family.id,
+            platform: 'TELEGRAM',
+            identifier: cleanTg,
+            name: newUser.name,
+          },
+          update: { name: newUser.name },
+        });
+      }
+
+      return newUser;
+    });
+
+    const token = fastify.jwt.sign({
+      userId: user.id,
+      familyId: family.id,
+      role: user.role,
+    });
+
+    return {
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        countryCode: user.countryCode,
+        whatsappNumber: user.whatsappNumber,
+        telegramChatId: user.telegramChatId,
+      },
+      family,
+      message: `Selamat datang di ${family.name}! Anda berhasil bergabung.`,
+    };
+  });
+
   // Login
   fastify.post('/login', async (request, reply) => {
     const { email, password } = request.body as any;
