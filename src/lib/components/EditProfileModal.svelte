@@ -15,6 +15,7 @@
   let loading = false;
   let successMsg = '';
   let errorMsg = '';
+  let prevIsOpen = false;
 
   const countryCodes = [
     { code: '+62', label: '🇮🇩 Indonesia (+62)' },
@@ -27,15 +28,24 @@
     { code: '+966', label: '🇸🇦 Arab Saudi (+966)' },
   ];
 
-  $: if (isOpen && $auth.user) {
-    name = $auth.user.name || '';
-    email = $auth.user.email || '';
-    countryCode = $auth.user.countryCode || '+62';
-    whatsappNumber = $auth.user.whatsappNumber || '';
-    telegramChatId = $auth.user.telegramChatId || '';
-    role = $auth.user.role || 'MEMBER';
+  // Inisialisasi HANYA SEKALI saat modal bertransisi dari closed ke open
+  // agar ketikan input pengguna tidak ter-reset/terhapus di tengah jalan!
+  $: if (isOpen && !prevIsOpen) {
+    prevIsOpen = true;
+    if ($auth.user) {
+      name = $auth.user.name || '';
+      email = $auth.user.email || '';
+      countryCode = $auth.user.countryCode || '+62';
+      whatsappNumber = $auth.user.whatsappNumber || '';
+      telegramChatId = $auth.user.telegramChatId || '';
+      role = $auth.user.role || 'MEMBER';
+    }
     successMsg = '';
     errorMsg = '';
+  }
+
+  $: if (!isOpen && prevIsOpen) {
+    prevIsOpen = false;
   }
 
   async function handleSave() {
@@ -66,20 +76,20 @@
 </script>
 
 {#if isOpen}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-brand-indigo/30 backdrop-blur-md transition-all">
-    <div class="relative w-full max-w-md bg-white/95 backdrop-blur-2xl rounded-3xl border border-white/80 shadow-glass-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-brand-indigo/35 backdrop-blur-md transition-all">
+    <div class="relative w-full max-w-md bg-white/95 backdrop-blur-2xl rounded-3xl border border-white/90 shadow-glass-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
       <!-- Header -->
-      <div class="p-6 pb-4 bg-gradient-to-r from-brand-sky-light via-brand-peach-light to-brand-butter-light border-b border-white/40 flex items-center justify-between">
+      <div class="p-6 pb-4 bg-gradient-to-r from-brand-sky-light via-brand-peach-light to-brand-butter-light border-b border-white/50 flex items-center justify-between">
         <div class="flex items-center gap-2.5">
           <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-brand-sky to-brand-peach flex items-center justify-center text-brand-indigo shadow-xs">
             <User class="w-5 h-5" />
           </div>
           <div>
-            <h3 class="text-base font-bold text-brand-indigo">Edit Profil & Nomor HP 🎀</h3>
-            <p class="text-xs text-brand-indigo/60">Pengaturan Akun Saya</p>
+            <h3 class="text-base font-extrabold text-brand-indigo">Edit Profil & Nomor HP 🎀</h3>
+            <p class="text-xs text-brand-indigo/60 font-medium">Pengaturan Akun & Akses Bot Monee</p>
           </div>
         </div>
-        <button on:click={onClose} class="p-2 rounded-full hover:bg-white/60 text-brand-indigo/60 hover:text-brand-indigo">
+        <button on:click={onClose} class="p-2 rounded-full hover:bg-white/70 text-brand-indigo/60 hover:text-brand-indigo transition">
           <X class="w-5 h-5" />
         </button>
       </div>
@@ -87,14 +97,14 @@
       <!-- Form Content -->
       <form on:submit|preventDefault={handleSave} class="p-6 space-y-4">
         {#if successMsg}
-          <div class="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs rounded-2xl flex items-center gap-2">
-            <Check class="w-4 h-4 shrink-0" />
+          <div class="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold rounded-2xl flex items-center gap-2 shadow-xs">
+            <Check class="w-4 h-4 shrink-0 text-emerald-600" />
             <span>{successMsg}</span>
           </div>
         {/if}
 
         {#if errorMsg}
-          <div class="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-2xl">
+          <div class="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-2xl shadow-xs">
             {errorMsg}
           </div>
         {/if}
@@ -120,7 +130,7 @@
             type="text"
             bind:value={name}
             required
-            class="w-full px-4 py-2.5 rounded-2xl bg-white/80 border border-white text-xs text-brand-indigo shadow-inner outline-none focus:ring-2 focus:ring-brand-sky"
+            class="w-full px-4 py-2.5 rounded-2xl bg-white border border-brand-indigo/10 text-xs text-brand-indigo shadow-xs outline-none focus:ring-2 focus:ring-brand-sky"
             placeholder="Contoh: Asep Indrak"
           />
         </div>
@@ -135,7 +145,7 @@
             type="email"
             value={email}
             disabled
-            class="w-full px-4 py-2.5 rounded-2xl bg-gray-100/80 border border-transparent text-xs text-brand-indigo/60 outline-none cursor-not-allowed"
+            class="w-full px-4 py-2.5 rounded-2xl bg-gray-100/80 border border-transparent text-xs text-brand-indigo/60 outline-none cursor-not-allowed select-none"
           />
         </div>
 
@@ -148,7 +158,7 @@
           <div class="flex gap-2">
             <select
               bind:value={countryCode}
-              class="w-32 px-3 py-2.5 rounded-2xl bg-white/80 border border-white text-xs text-brand-indigo shadow-inner outline-none focus:ring-2 focus:ring-brand-sky"
+              class="w-32 px-3 py-2.5 rounded-2xl bg-white border border-brand-indigo/10 text-xs text-brand-indigo shadow-xs outline-none focus:ring-2 focus:ring-brand-sky cursor-pointer"
             >
               {#each countryCodes as c}
                 <option value={c.code}>{c.label}</option>
@@ -158,7 +168,7 @@
               type="text"
               bind:value={whatsappNumber}
               placeholder="Contoh: 8123456789"
-              class="flex-1 px-4 py-2.5 rounded-2xl bg-white/80 border border-white text-xs text-brand-indigo shadow-inner outline-none font-mono focus:ring-2 focus:ring-brand-sky"
+              class="flex-1 px-4 py-2.5 rounded-2xl bg-white border border-brand-indigo/10 text-xs text-brand-indigo shadow-xs outline-none font-mono focus:ring-2 focus:ring-brand-sky"
             />
           </div>
           <p class="text-[11px] text-brand-indigo/50 mt-1">
@@ -176,7 +186,7 @@
             type="text"
             bind:value={telegramChatId}
             placeholder="Contoh: 123456789"
-            class="w-full px-4 py-2.5 rounded-2xl bg-white/80 border border-white text-xs text-brand-indigo shadow-inner outline-none font-mono focus:ring-2 focus:ring-brand-sky"
+            class="w-full px-4 py-2.5 rounded-2xl bg-white border border-brand-indigo/10 text-xs text-brand-indigo shadow-xs outline-none font-mono focus:ring-2 focus:ring-brand-sky"
           />
           <p class="text-[11px] text-brand-indigo/50 mt-1">
             Ketik <code>/start</code> di bot Telegram untuk melihat ID Telegram Anda.
@@ -186,7 +196,7 @@
         <button
           type="submit"
           disabled={loading}
-          class="w-full py-3 rounded-2xl bg-gradient-to-r from-brand-peach via-brand-butter to-brand-sky text-brand-indigo text-xs font-extrabold shadow-sm hover:scale-[1.01] transition disabled:opacity-50 mt-3 flex items-center justify-center gap-2"
+          class="w-full py-3 rounded-2xl bg-gradient-to-r from-brand-peach via-brand-butter to-brand-sky text-brand-indigo text-xs font-extrabold shadow-xs hover:scale-[1.01] active:scale-[0.99] transition disabled:opacity-50 mt-3 flex items-center justify-center gap-2 cursor-pointer"
         >
           <Sparkles class="w-4 h-4" />
           {loading ? 'Menyimpan...' : 'Simpan Perubahan'}

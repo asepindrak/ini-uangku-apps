@@ -26,9 +26,16 @@
 
   onMount(loadConfig);
 
-  $: if (isOpen) {
+  let prevIsOpen = false;
+
+  $: if (isOpen && !prevIsOpen) {
+    prevIsOpen = true;
     loadConfig();
     testResult = null;
+  }
+
+  $: if (!isOpen && prevIsOpen) {
+    prevIsOpen = false;
   }
 
   async function loadConfig() {
