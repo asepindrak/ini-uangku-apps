@@ -106,4 +106,15 @@ export const api = {
   getLLMConfig: () => request<any>('/api/llm/config'),
   updateLLMConfig: (data: any) => request<any>('/api/llm/config', { method: 'PUT', body: JSON.stringify(data) }),
   testLLMConnection: (data: any) => request<any>('/api/llm/test', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Riwayat Chat Bot AI
+  getBotChats: (params: { platform?: string; status?: string; limit?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (params.platform) query.set('platform', params.platform);
+    if (params.status) query.set('status', params.status);
+    if (params.limit) query.set('limit', String(params.limit));
+    const qs = query.toString();
+    return request<any[]>(`/api/bot/chats${qs ? `?${qs}` : ''}`);
+  },
+  clearBotChats: () => request<any>('/api/bot/chats', { method: 'DELETE' }),
 };

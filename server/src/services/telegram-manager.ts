@@ -4,7 +4,8 @@ import { LLMProviderService } from './llm-provider.js';
 import { ApprovalEngine } from './approval-engine.js';
 import { FinancialReportsService } from './financial-reports.js';
 import { TimezoneService } from './timezone-service.js';
-import { ActionType, ActionStatus, InputSource, TransactionType } from '@prisma/client';
+import { BotGateway } from './bot-gateway.js';
+import { ActionType, ActionStatus, InputSource, TransactionType, BotChatPlatform, BotChatStatus } from '@prisma/client';
 
 export class TelegramManager {
   public static globalBot: Bot | null = null;
@@ -350,6 +351,7 @@ export class TelegramManager {
    */
   private static async handleIncomingMessage(targetFamilyId: string | null, ctx: any, botToken: string) {
     const chatId = String(ctx.from?.id);
+    const textContent = ctx.message?.text || ctx.message?.caption || '';
 
     // 1. Identifikasi User dan Keluarga pengirim
     let user = await prisma.user.findFirst({
@@ -383,16 +385,25 @@ export class TelegramManager {
     }
 
     if (!user || !effectiveFamily) {
-      await ctx.reply(
+      const blockedText =
         `⚠️ ID Telegram Anda (\`${chatId}\`) belum terdaftar di aplikasi Ini Uangku.\n` +
-        `Silakan berikan ID ini kepada Manager keluarga Anda untuk didaftarkan di menu Whitelist Bot.`,
-        { parse_mode: 'Markdown' }
-      );
+        `Silakan berikan ID ini kepada Manager keluarga Anda untuk didaftarkan di menu Whitelist Bot.`;
+
+      await BotGateway.logChatMessage({
+        platform: BotChatPlatform.TELEGRAM,
+        senderIdentifier: chatId,
+        senderName: ctx.from?.first_name || 'Pengguna Telegram',
+        messageType: 'text',
+        rawContent: textContent || '[Pesan Telegram]',
+        replyContent: blockedText,
+        status: BotChatStatus.BLOCKED_NOT_WHITELISTED,
+      });
+
+      await ctx.reply(blockedText, { parse_mode: 'Markdown' });
       return;
     }
 
     const familyId = effectiveFamily.id;
-    const textContent = ctx.message?.text || ctx.message?.caption || '';
 
     // 2. Cek apakah pesan adalah persetujuan teks ("Ya" / "Batal") untuk Draf yang sedang aktif
     const activePending = await ApprovalEngine.getActivePendingAction(user.id);

@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '../db.js';
 import { UserRole } from '@prisma/client';
+import { normalizePhone } from '../utils/phone.js';
 
 export async function familyRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', fastify.authenticate);
@@ -39,17 +40,17 @@ export async function familyRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: 'Nama anggota wajib diisi.' });
     }
 
-    const cleanPhone = (whatsappNumber || '').replace(/[^0-9]/g, '').replace(/^0+/, '');
-    const cleanCountry = (countryCode || '+62').replace('+', '');
-    const fullJid = cleanPhone ? `${cleanCountry}${cleanPhone}@s.whatsapp.net` : null;
+    const phoneNorm = normalizePhone(whatsappNumber, countryCode);
+    const cleanPhone = phoneNorm.cleanDigits || null;
+    const fullJid = phoneNorm.whatsappJid || null;
 
     const newMember = await prisma.user.create({
       data: {
         familyId,
         name,
         role: role === 'MANAGER' ? UserRole.MANAGER : UserRole.MEMBER,
-        countryCode: countryCode || '+62',
-        whatsappNumber: cleanPhone || null,
+        countryCode: phoneNorm.countryCode,
+        whatsappNumber: cleanPhone,
         whatsappJid: fullJid,
         telegramChatId: telegramChatId ? String(telegramChatId).trim() : null,
       },

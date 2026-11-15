@@ -30,6 +30,7 @@ model Family {
   pendingActions  PendingAction[]
   whitelists      BotWhitelist[]
   llmConfig       LlmConfig?
+  botChatMessages BotChatMessage[]
 }
 
 // 2. User & Peran
@@ -59,6 +60,7 @@ model User {
   wallets         Wallet[]
   transactions    Transaction[]
   pendingActions  PendingAction[]
+  botChatMessages BotChatMessage[]
 }
 
 // 3. Multi-Wallet
@@ -289,4 +291,38 @@ model BotSession {
   key             String          @id
   data            String          @db.Text
   updatedAt       DateTime        @updatedAt
+}
+
+// 13. Riwayat Chat Bot AI (WhatsApp & Telegram)
+enum BotChatPlatform {
+  WHATSAPP
+  TELEGRAM
+}
+
+enum BotChatStatus {
+  SUCCESS
+  PENDING_APPROVAL
+  BLOCKED_NOT_WHITELISTED
+  ERROR
+  CONSULTATION
+}
+
+model BotChatMessage {
+  id               String          @id @default(uuid())
+  familyId         String?
+  family           Family?         @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  userId           String?
+  user             User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  platform         BotChatPlatform
+  senderIdentifier String          // No HP WhatsApp atau Chat ID Telegram
+  senderName       String?
+  messageType      String          @default("text") // "text" | "image" | "audio"
+  rawContent       String          @db.Text
+  replyContent     String?         @db.Text
+  status           BotChatStatus   @default(SUCCESS)
+  metadata         String?         @db.Text
+  createdAt        DateTime        @default(now())
+
+  @@index([familyId, createdAt])
+  @@index([senderIdentifier])
 }

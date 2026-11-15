@@ -15,12 +15,14 @@ import { LLMProviderService } from './llm-provider.js';
 import { ApprovalEngine } from './approval-engine.js';
 import { FinancialReportsService } from './financial-reports.js';
 import { TimezoneService } from './timezone-service.js';
-import { ActionType, InputSource, TransactionType } from '@prisma/client';
+import { normalizeBaileysSender } from '../utils/phone.js';
+import { ActionType, InputSource, TransactionType, BotChatPlatform, BotChatStatus } from '@prisma/client';
 
 export class BotGateway {
   private static waSock: any = null;
   public static latestWaQrCode: string | null = null;
   public static isWaConnected: boolean = false;
+  private static sentMessageIds: Set<string> = new Set();
 
   /**
    * Inisialisasi Gateway WhatsApp (Baileys)
@@ -88,28 +90,77 @@ export class BotGateway {
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
       if (type !== 'notify') return;
       for (const msg of messages) {
-        if (!msg.message || msg.key.fromMe) continue;
+        if (!msg.message) continue;
+        // Abaikan pesan yang baru saja dikirim oleh bot Monee sendiri
+        if (msg.key.id && this.sentMessageIds.has(msg.key.id)) continue;
+        
+        // Jika dari akun bot sendiri (fromMe)
+        if (msg.key.fromMe) {
+          const myJid = sock.user?.id?.split(':')[0];
+          const targetJid = msg.key.remoteJid?.split(':')[0]?.replace('@s.whatsapp.net', '');
+          // Izinkan jika pesan dikirim ke diri sendiri (Note to Self / chat ke nomor bot sendiri)
+          if (myJid && targetJid && myJid !== targetJid) {
+            continue;
+          }
+        }
+
         await this.handleIncomingWhatsAppMessage(msg);
       }
     });
   }
 
   /**
-   * Pemrosesan Pesan Masuk WhatsApp (Strict Whitelist Protected)
+   * Catat riwayat chat bot AI ke database
    */
-  private static async handleIncomingWhatsAppMessage(msg: proto.IWebMessageInfo) {
-    const remoteJid = msg.key.remoteJid;
-    if (!remoteJid || remoteJid.includes('@g.us')) return; // Prioritaskan direct message
+  static async logChatMessage(data: {
+    familyId?: string;
+    userId?: string;
+    platform: BotChatPlatform;
+    senderIdentifier: string;
+    senderName?: string;
+    messageType?: string;
+    rawContent: string;
+    replyContent?: string;
+    status: BotChatStatus;
+    metadata?: any;
+  }) {
+    try {
+      return await prisma.botChatMessage.create({
+        data: {
+          familyId: data.familyId,
+          userId: data.userId,
+          platform: data.platform,
+          senderIdentifier: data.senderIdentifier,
+          senderName: data.senderName,
+          messageType: data.messageType || 'text',
+          rawContent: data.rawContent || '',
+          replyContent: data.replyContent || null,
+          status: data.status,
+          metadata: data.metadata ? JSON.stringify(data.metadata) : null,
+        },
+      });
+    } catch (e) {
+      console.error('Gagal mencatat riwayat chat bot:', e);
+      return null;
+    }
+  }
 
-    // Format nomor WhatsApp (e.g. 628123456789)
-    const phoneNumber = remoteJid.replace('@s.whatsapp.net', '').replace(/[^0-9]/g, '');
+  /**
+   * Cari User / Whitelist secara cerdas dan toleran terhadap berbagai format nomor WhatsApp
+   */
+  private static async resolveUserFromWhatsApp(cleanJid: string, phoneNumber: string) {
+    const localPhone = phoneNumber.startsWith('62') ? phoneNumber.slice(2) : phoneNumber;
+    const suffix = phoneNumber.length >= 8 ? phoneNumber.slice(-8) : phoneNumber;
 
-    // 1. Cek Whitelist: User terdaftar di database
     let user = await prisma.user.findFirst({
       where: {
         OR: [
-          { whatsappJid: remoteJid },
-          { whatsappNumber: { contains: phoneNumber.slice(-10) } },
+          { whatsappJid: cleanJid },
+          { whatsappJid: `${phoneNumber}@s.whatsapp.net` },
+          { whatsappNumber: phoneNumber },
+          { whatsappNumber: localPhone },
+          { whatsappNumber: `0${localPhone}` },
+          { whatsappNumber: { endsWith: suffix } },
         ],
       },
       include: {
@@ -117,92 +168,242 @@ export class BotGateway {
       },
     });
 
-    // Jika tidak ditemukan di User, periksa tabel BotWhitelist (platform WHATSAPP)
-    if (!user) {
-      const whitelistEntry = await prisma.botWhitelist.findFirst({
-        where: {
-          platform: 'WHATSAPP',
-          identifier: { contains: phoneNumber.slice(-10) },
-        },
-        include: {
-          family: {
-            include: {
-              users: true,
-            },
+    if (user) return user;
+
+    const whitelistEntry = await prisma.botWhitelist.findFirst({
+      where: {
+        platform: 'WHATSAPP',
+        OR: [
+          { identifier: cleanJid },
+          { identifier: `${phoneNumber}@s.whatsapp.net` },
+          { identifier: phoneNumber },
+          { identifier: localPhone },
+          { identifier: `0${localPhone}` },
+          { identifier: { contains: suffix } },
+        ],
+      },
+      include: {
+        family: {
+          include: {
+            users: true,
           },
         },
-      });
+      },
+    });
 
-      if (whitelistEntry && whitelistEntry.family.users.length > 0) {
-        user = whitelistEntry.family.users[0] as any;
-      }
+    if (whitelistEntry && whitelistEntry.family && whitelistEntry.family.users.length > 0) {
+      return whitelistEntry.family.users[0] as any;
     }
 
-    // JIKA TIDAK ADA DI WHITELIST -> DROP PESAN SECARA DIAM-DIAM (SILENT DROP)
-    if (!user) {
-      console.log(`[WA Whitelist Guard] Pesan dari ${remoteJid} diabaikan (bukan anggota keluarga terdaftar).`);
-      return;
-    }
+    return null;
+  }
 
-    const familyId = user.familyId;
-    const msgType = Object.keys(msg.message || {})[0];
+  /**
+   * Pemrosesan Pesan Masuk WhatsApp (Strict Whitelist Protected dengan Auto-Guide & Chat History)
+   */
+  private static async handleIncomingWhatsAppMessage(msg: proto.IWebMessageInfo) {
+    const rawRemoteJid = msg.key.remoteJid;
+    if (!rawRemoteJid || rawRemoteJid.includes('@g.us')) return; // Prioritaskan direct message
+
+    const { cleanJid, phoneNumber } = normalizeBaileysSender(rawRemoteJid);
+    const msgType = Object.keys(msg.message || {})[0] || 'conversation';
     const textContent =
       msg.message?.conversation ||
       msg.message?.extendedTextMessage?.text ||
       msg.message?.imageMessage?.caption ||
       '';
 
-    // 2. Cek apakah pesan adalah persetujuan untuk Draf yang sedang aktif
-    const activePending = await ApprovalEngine.getActivePendingAction(user.id);
-    if (activePending && textContent) {
-      const response = await ApprovalEngine.processResponse(user.id, textContent);
-      if (response.status === 'APPROVED' || response.status === 'REJECTED') {
-        let replyMsg = response.message;
-        if (response.alert) {
-          replyMsg += `\n\n${response.alert}`;
-        }
-        await this.sendWhatsAppMessage(remoteJid, replyMsg);
+    let user: any = null;
+
+    try {
+      // 1. Cek Whitelist: User terdaftar di database
+      user = await this.resolveUserFromWhatsApp(cleanJid, phoneNumber);
+
+      // JIKA TIDAK ADA DI WHITELIST:
+      // Jangan silent drop! Beri tahu pengguna bahwa nomornya belum terdaftar dan catat ke riwayat chat.
+      if (!user) {
+        console.log(`[WA Whitelist Guard] Pesan dari ${cleanJid} (${phoneNumber}) diabaikan (belum terdaftar).`);
+
+        const unwhitelistedReply =
+          `Halo Kak! 👋\n\n` +
+          `Nomor WhatsApp ini (*+${phoneNumber}*) belum terdaftar pada keluarga aktif di aplikasi *Ini Uangku*.\n\n` +
+          `👉 *Jika Anda Manager:* Masuk ke aplikasi Ini Uangku di menu *Edit Profil*, lalu simpan nomor WhatsApp ini (*${phoneNumber.startsWith('62') ? '0' + phoneNumber.slice(2) : phoneNumber}*).\n` +
+          `👉 *Jika Anda Anggota Keluarga:* Mintalah Manager keluarga Anda untuk menambahkan nomor ini melalui menu *Undang Keluarga*.\n\n` +
+          `Setelah nomor terdaftar, Monee langsung siap membantu mencatat nota, voice note, dan mengelola keuangan keluarga Kakak! 🎀`;
+
+        await this.logChatMessage({
+          platform: BotChatPlatform.WHATSAPP,
+          senderIdentifier: phoneNumber || cleanJid,
+          senderName: (msg.pushName as string) || 'Pengguna Tidak Dikenal',
+          messageType: msgType === 'imageMessage' ? 'image' : msgType === 'audioMessage' ? 'audio' : 'text',
+          rawContent: textContent || `[Media: ${msgType}]`,
+          replyContent: unwhitelistedReply,
+          status: BotChatStatus.BLOCKED_NOT_WHITELISTED,
+          metadata: { cleanJid, phoneNumber, rawRemoteJid },
+        });
+
+        await this.sendWhatsAppMessage(cleanJid, unwhitelistedReply);
         return;
       }
-    }
 
-    // 2.5 Quick Commands Finansial (/saldo, /hariini, /kemarin, /bulanini, /sinkingfund, /tagihan, /help)
-    const trimmedLower = textContent.trim().toLowerCase();
-    if (trimmedLower === '/saldo' || trimmedLower === 'saldo') {
-      const report = await FinancialReportsService.getSaldoReport(familyId);
-      await this.sendWhatsAppMessage(remoteJid, report);
-      return;
-    }
-    if (trimmedLower === '/hariini' || trimmedLower === 'hari ini' || trimmedLower === '/hari_ini') {
-      const report = await FinancialReportsService.getHariIniReport(familyId);
-      await this.sendWhatsAppMessage(remoteJid, report);
-      return;
-    }
-    if (trimmedLower === '/kemarin' || trimmedLower === 'kemarin') {
-      const report = await FinancialReportsService.getKemarinReport(familyId);
-      await this.sendWhatsAppMessage(remoteJid, report);
-      return;
-    }
-    if (trimmedLower === '/bulanini' || trimmedLower === 'bulan ini' || trimmedLower === '/bulan_ini') {
-      const report = await FinancialReportsService.getBulanIniReport(familyId);
-      await this.sendWhatsAppMessage(remoteJid, report);
-      return;
-    }
-    if (trimmedLower === '/sinkingfund' || trimmedLower === 'sinking fund' || trimmedLower === '/tabungan' || trimmedLower === 'tabungan') {
-      const report = await FinancialReportsService.getSinkingFundReport(familyId);
-      await this.sendWhatsAppMessage(remoteJid, report);
-      return;
-    }
-    if (trimmedLower === '/tagihan' || trimmedLower === 'tagihan' || trimmedLower === '/bills') {
-      const report = await FinancialReportsService.getTagihanReport(familyId);
-      await this.sendWhatsAppMessage(remoteJid, report);
-      return;
-    }
-    if (trimmedLower === '/help' || trimmedLower === '/bantuan' || trimmedLower === 'bantuan' || trimmedLower === 'help' || trimmedLower === '/start') {
-      const report = FinancialReportsService.getHelpMessage();
-      await this.sendWhatsAppMessage(remoteJid, report);
-      return;
-    }
+      const familyId = user.familyId;
+
+      // 2. Cek apakah pesan adalah persetujuan untuk Draf yang sedang aktif
+      const activePending = await ApprovalEngine.getActivePendingAction(user.id);
+      if (activePending && textContent) {
+        const response = await ApprovalEngine.processResponse(user.id, textContent);
+        if (response.status === 'APPROVED' || response.status === 'REJECTED') {
+          let replyMsg = response.message;
+          if (response.alert) {
+            replyMsg += `\n\n${response.alert}`;
+          }
+          await this.logChatMessage({
+            familyId,
+            userId: user.id,
+            platform: BotChatPlatform.WHATSAPP,
+            senderIdentifier: phoneNumber,
+            senderName: user.name,
+            messageType: 'text',
+            rawContent: textContent,
+            replyContent: replyMsg,
+            status: BotChatStatus.SUCCESS,
+            metadata: { pendingActionId: activePending.id, status: response.status },
+          });
+          await this.sendWhatsAppMessage(cleanJid, replyMsg);
+          return;
+        }
+      }
+
+      // 2.5 Quick Commands Finansial (/saldo, /hariini, /kemarin, /bulanini, /sinkingfund, /tagihan, /help)
+      const trimmedLower = textContent.trim().toLowerCase();
+      if (trimmedLower === '/saldo' || trimmedLower === 'saldo') {
+        const report = await FinancialReportsService.getSaldoReport(familyId);
+        await this.logChatMessage({
+          familyId,
+          userId: user.id,
+          platform: BotChatPlatform.WHATSAPP,
+          senderIdentifier: phoneNumber,
+          senderName: user.name,
+          messageType: 'text',
+          rawContent: textContent,
+          replyContent: report,
+          status: BotChatStatus.CONSULTATION,
+        });
+        await this.sendWhatsAppMessage(cleanJid, report);
+        return;
+      }
+      if (trimmedLower === '/hariini' || trimmedLower === 'hari ini' || trimmedLower === '/hari_ini') {
+        const report = await FinancialReportsService.getHariIniReport(familyId);
+        await this.logChatMessage({
+          familyId,
+          userId: user.id,
+          platform: BotChatPlatform.WHATSAPP,
+          senderIdentifier: phoneNumber,
+          senderName: user.name,
+          messageType: 'text',
+          rawContent: textContent,
+          replyContent: report,
+          status: BotChatStatus.CONSULTATION,
+        });
+        await this.sendWhatsAppMessage(cleanJid, report);
+        return;
+      }
+      if (trimmedLower === '/kemarin' || trimmedLower === 'kemarin') {
+        const report = await FinancialReportsService.getKemarinReport(familyId);
+        await this.logChatMessage({
+          familyId,
+          userId: user.id,
+          platform: BotChatPlatform.WHATSAPP,
+          senderIdentifier: phoneNumber,
+          senderName: user.name,
+          messageType: 'text',
+          rawContent: textContent,
+          replyContent: report,
+          status: BotChatStatus.CONSULTATION,
+        });
+        await this.sendWhatsAppMessage(cleanJid, report);
+        return;
+      }
+      if (trimmedLower === '/bulanini' || trimmedLower === 'bulan ini' || trimmedLower === '/bulan_ini') {
+        const report = await FinancialReportsService.getBulanIniReport(familyId);
+        await this.logChatMessage({
+          familyId,
+          userId: user.id,
+          platform: BotChatPlatform.WHATSAPP,
+          senderIdentifier: phoneNumber,
+          senderName: user.name,
+          messageType: 'text',
+          rawContent: textContent,
+          replyContent: report,
+          status: BotChatStatus.CONSULTATION,
+        });
+        await this.sendWhatsAppMessage(cleanJid, report);
+        return;
+      }
+      if (trimmedLower === '/sinkingfund' || trimmedLower === 'sinking fund' || trimmedLower === '/tabungan' || trimmedLower === 'tabungan') {
+        const report = await FinancialReportsService.getSinkingFundReport(familyId);
+        await this.logChatMessage({
+          familyId,
+          userId: user.id,
+          platform: BotChatPlatform.WHATSAPP,
+          senderIdentifier: phoneNumber,
+          senderName: user.name,
+          messageType: 'text',
+          rawContent: textContent,
+          replyContent: report,
+          status: BotChatStatus.CONSULTATION,
+        });
+        await this.sendWhatsAppMessage(cleanJid, report);
+        return;
+      }
+      if (trimmedLower === '/tagihan' || trimmedLower === 'tagihan' || trimmedLower === '/bills') {
+        const report = await FinancialReportsService.getTagihanReport(familyId);
+        await this.logChatMessage({
+          familyId,
+          userId: user.id,
+          platform: BotChatPlatform.WHATSAPP,
+          senderIdentifier: phoneNumber,
+          senderName: user.name,
+          messageType: 'text',
+          rawContent: textContent,
+          replyContent: report,
+          status: BotChatStatus.CONSULTATION,
+        });
+        await this.sendWhatsAppMessage(cleanJid, report);
+        return;
+      }
+      if (trimmedLower === '/help' || trimmedLower === '/bantuan' || trimmedLower === 'bantuan' || trimmedLower === 'help' || trimmedLower === '/start') {
+        const report = FinancialReportsService.getHelpMessage();
+        await this.logChatMessage({
+          familyId,
+          userId: user.id,
+          platform: BotChatPlatform.WHATSAPP,
+          senderIdentifier: phoneNumber,
+          senderName: user.name,
+          messageType: 'text',
+          rawContent: textContent,
+          replyContent: report,
+          status: BotChatStatus.CONSULTATION,
+        });
+        await this.sendWhatsAppMessage(cleanJid, report);
+        return;
+      }
+      if (trimmedLower === '/help' || trimmedLower === '/bantuan' || trimmedLower === 'bantuan' || trimmedLower === 'help' || trimmedLower === '/start') {
+        const report = FinancialReportsService.getHelpMessage();
+        await this.logChatMessage({
+          familyId,
+          userId: user.id,
+          platform: BotChatPlatform.WHATSAPP,
+          senderIdentifier: phoneNumber,
+          senderName: user.name,
+          messageType: 'text',
+          rawContent: textContent,
+          replyContent: report,
+          status: BotChatStatus.CONSULTATION,
+        });
+        await this.sendWhatsAppMessage(cleanJid, report);
+        return;
+      }
 
     // 3. Konteks Waktu & Agregasi Temporal Finansial Keluarga (Berdasarkan Timezone Keluarga)
     const tz = await TimezoneService.getFamilyTimezone(familyId);
@@ -332,7 +533,7 @@ export class BotGateway {
 
     // 4. Handle Media (Foto Nota / Tulisan Tangan Kertas / Voice Note)
     if (msgType === 'imageMessage') {
-      await this.sendWhatsAppMessage(remoteJid, '🔍 Sedang membaca foto nota / tulisan tangan Anda dengan AI...');
+      await this.sendWhatsAppMessage(cleanJid, '🔍 Sedang membaca foto nota / tulisan tangan Anda dengan AI...');
       try {
         const buffer = await downloadMediaMessage(msg, 'buffer', {});
         imageBase64 = buffer.toString('base64');
@@ -340,7 +541,7 @@ export class BotGateway {
         console.error('Gagal mengunduh gambar WA:', err);
       }
     } else if (msgType === 'audioMessage') {
-      await this.sendWhatsAppMessage(remoteJid, '🎙️ Sedang mendengarkan rekaman suara Anda...');
+      await this.sendWhatsAppMessage(cleanJid, '🎙️ Sedang mendengarkan rekaman suara Anda...');
       try {
         const buffer = await downloadMediaMessage(msg, 'buffer', {});
         audioBase64 = buffer.toString('base64');
@@ -396,7 +597,18 @@ export class BotGateway {
 
     // 6. Jika berupa Pertanyaan / Konsultasi Finansial
     if (processed.intent === 'FINANCIAL_CONSULTATION' && processed.replyText) {
-      await this.sendWhatsAppMessage(remoteJid, processed.replyText);
+      await this.logChatMessage({
+        familyId,
+        userId: user.id,
+        platform: BotChatPlatform.WHATSAPP,
+        senderIdentifier: phoneNumber,
+        senderName: user.name,
+        messageType: 'text',
+        rawContent: textContent || '[Konsultasi Finansial]',
+        replyContent: processed.replyText,
+        status: BotChatStatus.CONSULTATION,
+      });
+      await this.sendWhatsAppMessage(cleanJid, processed.replyText);
       return;
     }
 
@@ -422,7 +634,19 @@ export class BotGateway {
         },
         summaryText
       );
-      await this.sendWhatsAppMessage(remoteJid, summaryText);
+      await this.logChatMessage({
+        familyId,
+        userId: user.id,
+        platform: BotChatPlatform.WHATSAPP,
+        senderIdentifier: phoneNumber,
+        senderName: user.name,
+        messageType: 'text',
+        rawContent: textContent,
+        replyContent: summaryText,
+        status: BotChatStatus.PENDING_APPROVAL,
+        metadata: { actionType: 'UPDATE_TRANSACTION', target: processed.targetDescription },
+      });
+      await this.sendWhatsAppMessage(cleanJid, summaryText);
       return;
     }
 
@@ -442,7 +666,19 @@ export class BotGateway {
         },
         summaryText
       );
-      await this.sendWhatsAppMessage(remoteJid, summaryText);
+      await this.logChatMessage({
+        familyId,
+        userId: user.id,
+        platform: BotChatPlatform.WHATSAPP,
+        senderIdentifier: phoneNumber,
+        senderName: user.name,
+        messageType: 'text',
+        rawContent: textContent,
+        replyContent: summaryText,
+        status: BotChatStatus.PENDING_APPROVAL,
+        metadata: { actionType: 'DELETE_TRANSACTION', target: processed.targetDescription },
+      });
+      await this.sendWhatsAppMessage(cleanJid, summaryText);
       return;
     }
 
@@ -465,7 +701,19 @@ export class BotGateway {
         },
         summaryText
       );
-      await this.sendWhatsAppMessage(remoteJid, summaryText);
+      await this.logChatMessage({
+        familyId,
+        userId: user.id,
+        platform: BotChatPlatform.WHATSAPP,
+        senderIdentifier: phoneNumber,
+        senderName: user.name,
+        messageType: 'text',
+        rawContent: textContent,
+        replyContent: summaryText,
+        status: BotChatStatus.PENDING_APPROVAL,
+        metadata: { actionType: 'CREATE_WALLET', name: processed.walletName },
+      });
+      await this.sendWhatsAppMessage(cleanJid, summaryText);
       return;
     }
 
@@ -494,7 +742,19 @@ export class BotGateway {
         },
         summaryText
       );
-      await this.sendWhatsAppMessage(remoteJid, summaryText);
+      await this.logChatMessage({
+        familyId,
+        userId: user.id,
+        platform: BotChatPlatform.WHATSAPP,
+        senderIdentifier: phoneNumber,
+        senderName: user.name,
+        messageType: 'text',
+        rawContent: textContent,
+        replyContent: summaryText,
+        status: BotChatStatus.PENDING_APPROVAL,
+        metadata: { actionType: 'TRANSFER_WALLET', amount: numAmount },
+      });
+      await this.sendWhatsAppMessage(cleanJid, summaryText);
       return;
     }
 
@@ -522,7 +782,19 @@ export class BotGateway {
         },
         summaryText
       );
-      await this.sendWhatsAppMessage(remoteJid, summaryText);
+      await this.logChatMessage({
+        familyId,
+        userId: user.id,
+        platform: BotChatPlatform.WHATSAPP,
+        senderIdentifier: phoneNumber,
+        senderName: user.name,
+        messageType: 'text',
+        rawContent: textContent,
+        replyContent: summaryText,
+        status: BotChatStatus.PENDING_APPROVAL,
+        metadata: { actionType: 'SET_BUDGET', category: catName, budget: monthlyBudget },
+      });
+      await this.sendWhatsAppMessage(cleanJid, summaryText);
       return;
     }
 
@@ -548,7 +820,19 @@ export class BotGateway {
         },
         summaryText
       );
-      await this.sendWhatsAppMessage(remoteJid, summaryText);
+      await this.logChatMessage({
+        familyId,
+        userId: user.id,
+        platform: BotChatPlatform.WHATSAPP,
+        senderIdentifier: phoneNumber,
+        senderName: user.name,
+        messageType: 'text',
+        rawContent: textContent,
+        replyContent: summaryText,
+        status: BotChatStatus.PENDING_APPROVAL,
+        metadata: { actionType: 'CREATE_SINKING_FUND', name: processed.sinkingFundName },
+      });
+      await this.sendWhatsAppMessage(cleanJid, summaryText);
       return;
     }
 
@@ -576,16 +860,37 @@ export class BotGateway {
         },
         summaryText
       );
-      await this.sendWhatsAppMessage(remoteJid, summaryText);
+      await this.logChatMessage({
+        familyId,
+        userId: user.id,
+        platform: BotChatPlatform.WHATSAPP,
+        senderIdentifier: phoneNumber,
+        senderName: user.name,
+        messageType: 'text',
+        rawContent: textContent,
+        replyContent: summaryText,
+        status: BotChatStatus.PENDING_APPROVAL,
+        metadata: { actionType: 'CREATE_RECURRING_BILL', name: processed.billName },
+      });
+      await this.sendWhatsAppMessage(cleanJid, summaryText);
       return;
     }
 
     // 8. Jika berupa Pencatatan Transaksi Baru (CREATE_TRANSACTION)
     if (!processed.amount || processed.amount <= 0) {
-      await this.sendWhatsAppMessage(
-        remoteJid,
-        'Mohon maaf Kak, Monee belum bisa membaca nominalnya dengan jelas. Boleh disebutkan kembali keperluan dan nominalnya ya Kak? 😊'
-      );
+      const clarifyText = 'Mohon maaf Kak, Monee belum bisa membaca nominalnya dengan jelas. Boleh disebutkan kembali keperluan dan nominalnya ya Kak? 😊';
+      await this.logChatMessage({
+        familyId,
+        userId: user.id,
+        platform: BotChatPlatform.WHATSAPP,
+        senderIdentifier: phoneNumber,
+        senderName: user.name,
+        messageType: msgType,
+        rawContent: textContent || '[Foto / Suara]',
+        replyContent: clarifyText,
+        status: BotChatStatus.CONSULTATION,
+      });
+      await this.sendWhatsAppMessage(cleanJid, clarifyText);
       return;
     }
 
@@ -643,7 +948,37 @@ export class BotGateway {
       summaryText
     );
 
-    await this.sendWhatsAppMessage(remoteJid, summaryText);
+    await this.logChatMessage({
+      familyId,
+      userId: user.id,
+      platform: BotChatPlatform.WHATSAPP,
+      senderIdentifier: phoneNumber,
+      senderName: user.name,
+      messageType: imageBase64 ? 'image' : audioBase64 ? 'audio' : 'text',
+      rawContent: textContent || (imageBase64 ? '[Foto Nota]' : '[Pesan Suara]'),
+      replyContent: summaryText,
+      status: BotChatStatus.PENDING_APPROVAL,
+      metadata: { actionType: 'CREATE_TRANSACTION', amount: processed.amount, description: processed.description },
+    });
+
+    await this.sendWhatsAppMessage(cleanJid, summaryText);
+    } catch (err: any) {
+      console.error('❌ [BotGateway] Error handling incoming WhatsApp message:', err);
+      const errReply = `Mohon maaf Kak, terjadi kendala saat Monee memproses pesan Anda: ${err?.message || 'Kesalahan sistem'}. Mohon coba lagi sesaat lagi ya Kak. 🎀`;
+      await this.logChatMessage({
+        familyId: user?.familyId,
+        userId: user?.id,
+        platform: BotChatPlatform.WHATSAPP,
+        senderIdentifier: phoneNumber || cleanJid,
+        senderName: user?.name || (msg.pushName as string) || 'Pengguna',
+        messageType: msgType,
+        rawContent: textContent || `[Media: ${msgType}]`,
+        replyContent: errReply,
+        status: BotChatStatus.ERROR,
+        metadata: { error: String(err?.stack || err?.message || err) },
+      });
+      await this.sendWhatsAppMessage(cleanJid, errReply);
+    }
   }
 
   /**
@@ -652,12 +987,22 @@ export class BotGateway {
   static async sendWhatsAppMessage(jid: string, text: string) {
     if (!this.waSock || !this.isWaConnected) {
       console.warn('Tidak dapat mengirim pesan WhatsApp: Baileys socket tidak aktif.');
-      return;
+      return null;
     }
     try {
-      await this.waSock.sendMessage(jid, { text });
+      const cleanTarget = jid.includes('@') ? jid.split(':')[0] + '@' + jid.split('@')[1] : `${jid}@s.whatsapp.net`;
+      const sent = await this.waSock.sendMessage(cleanTarget, { text });
+      if (sent?.key?.id) {
+        this.sentMessageIds.add(sent.key.id);
+        if (this.sentMessageIds.size > 200) {
+          const first = this.sentMessageIds.values().next().value;
+          if (first) this.sentMessageIds.delete(first);
+        }
+      }
+      return sent;
     } catch (err) {
       console.error('Error sending WhatsApp message:', err);
+      return null;
     }
   }
 

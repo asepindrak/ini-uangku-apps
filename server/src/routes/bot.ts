@@ -166,4 +166,52 @@ export async function botRoutes(fastify: FastifyInstance) {
 
     return { success: true, message: 'ID Telegram berhasil dihapus dari whitelist.' };
   });
+
+  // GET Riwayat Chat Bot AI (WhatsApp & Telegram)
+  fastify.get('/chats', async (request) => {
+    const { familyId, role } = (request as any).user;
+    const { platform, status, limit = 50 } = request.query as any;
+
+    const where: any = {
+      OR: [
+        { familyId },
+        // Jika Manager, tampilkan juga pesan yang ditolak (unwhitelisted) agar mudah di-debug
+        ...(role === 'MANAGER' ? [{ familyId: null }] : []),
+      ],
+    };
+
+    if (platform && platform !== 'ALL') {
+      where.platform = platform;
+    }
+    if (status && status !== 'ALL') {
+      where.status = status;
+    }
+
+    const chats = await prisma.botChatMessage.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(Number(limit) || 50, 100),
+      include: {
+        user: {
+          select: { id: true, name: true, role: true, countryCode: true, whatsappNumber: true },
+        },
+      },
+    });
+
+    return chats;
+  });
+
+  // DELETE Hapus Riwayat Chat Bot
+  fastify.delete('/chats', async (request) => {
+    const { familyId } = (request as any).user;
+    await prisma.botChatMessage.deleteMany({
+      where: {
+        OR: [
+          { familyId },
+          { familyId: null },
+        ],
+      },
+    });
+    return { success: true, message: 'Riwayat chat bot AI berhasil dibersihkan.' };
+  });
 }

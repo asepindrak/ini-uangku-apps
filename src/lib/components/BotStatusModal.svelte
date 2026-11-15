@@ -18,13 +18,19 @@
     ExternalLink,
     HelpCircle,
     ChevronDown,
-    ChevronUp
+    ChevronUp,
+    MessageSquare,
+    Clock,
+    Camera,
+    Mic,
+    Filter,
+    AlertTriangle,
   } from 'lucide-svelte';
 
   export let isOpen: boolean = false;
   export let onClose: () => void;
 
-  let activeTab: 'telegram' | 'whatsapp' = 'telegram';
+  let activeTab: 'chats' | 'whatsapp' | 'telegram' = 'chats';
 
   let status: BotStatus = {
     whatsappConnected: false,
@@ -58,10 +64,18 @@
   let telegramMessage: { text: string; type: 'success' | 'error' } | null = null;
   let pollInterval: any = null;
 
+  // Chat History State
+  let botChats: any[] = [];
+  let loadingChats = false;
+  let clearingChats = false;
+  let selectedChatPlatform: 'ALL' | 'WHATSAPP' | 'TELEGRAM' = 'ALL';
+  let selectedChatStatus: string = 'ALL';
+
   onMount(() => {
     if (isOpen) {
       loadStatus();
       loadTelegramConfig();
+      loadBotChats();
       startPolling();
     }
   });
@@ -69,6 +83,7 @@
   $: if (isOpen) {
     loadStatus();
     loadTelegramConfig();
+    loadBotChats();
     startPolling();
   } else {
     stopPolling();
@@ -80,6 +95,8 @@
       loadStatus();
       if (activeTab === 'telegram') {
         loadTelegramConfig(false);
+      } else if (activeTab === 'chats') {
+        loadBotChats(false);
       }
     }, 4000);
   }
@@ -96,6 +113,34 @@
       status = await api.getBotStatus();
     } catch (e) {
       console.warn('Bot status check error:', e);
+    }
+  }
+
+  async function loadBotChats(showSpinner = true) {
+    if (showSpinner) loadingChats = true;
+    try {
+      botChats = await api.getBotChats({
+        platform: selectedChatPlatform !== 'ALL' ? selectedChatPlatform : undefined,
+        status: selectedChatStatus !== 'ALL' ? selectedChatStatus : undefined,
+        limit: 50,
+      });
+    } catch (e) {
+      console.warn('Gagal memuat riwayat chat:', e);
+    } finally {
+      if (showSpinner) loadingChats = false;
+    }
+  }
+
+  async function handleClearChats() {
+    if (!confirm('Apakah Kakak yakin ingin menghapus seluruh riwayat percakapan bot AI ini?')) return;
+    clearingChats = true;
+    try {
+      await api.clearBotChats();
+      await loadBotChats();
+    } catch (e: any) {
+      alert(e.message || 'Gagal menghapus riwayat chat.');
+    } finally {
+      clearingChats = false;
     }
   }
 
@@ -219,25 +264,27 @@
       </div>
 
       <!-- Navigation Tabs -->
-      <div class="flex border-b border-brand-indigo/5 bg-white/60 px-6 pt-3 gap-2">
+      <div class="flex border-b border-brand-indigo/5 bg-white/60 px-6 pt-3 gap-2 overflow-x-auto">
         <button
           type="button"
-          on:click={() => (activeTab = 'telegram')}
-          class="flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-2xl border-b-2 transition {activeTab === 'telegram'
+          on:click={() => { activeTab = 'chats'; loadBotChats(); }}
+          class="flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-2xl border-b-2 transition shrink-0 {activeTab === 'chats'
             ? 'border-brand-sky-dark text-brand-indigo bg-white shadow-xs'
             : 'border-transparent text-brand-indigo/50 hover:text-brand-indigo hover:bg-white/40'}"
         >
-          <Send class="w-3.5 h-3.5 text-sky-600" />
-          Bot Telegram
-          {#if telegramConfig.isRunning || telegramConfig.globalBotRunning}
-            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <MessageSquare class="w-3.5 h-3.5 text-brand-indigo" />
+          Riwayat Chat AI
+          {#if botChats.length > 0}
+            <span class="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-brand-sky text-brand-indigo">
+              {botChats.length}
+            </span>
           {/if}
         </button>
 
         <button
           type="button"
           on:click={() => (activeTab = 'whatsapp')}
-          class="flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-2xl border-b-2 transition {activeTab === 'whatsapp'
+          class="flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-2xl border-b-2 transition shrink-0 {activeTab === 'whatsapp'
             ? 'border-brand-sky-dark text-brand-indigo bg-white shadow-xs'
             : 'border-transparent text-brand-indigo/50 hover:text-brand-indigo hover:bg-white/40'}"
         >
@@ -247,9 +294,219 @@
             <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
           {/if}
         </button>
+
+        <button
+          type="button"
+          on:click={() => (activeTab = 'telegram')}
+          class="flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-2xl border-b-2 transition shrink-0 {activeTab === 'telegram'
+            ? 'border-brand-sky-dark text-brand-indigo bg-white shadow-xs'
+            : 'border-transparent text-brand-indigo/50 hover:text-brand-indigo hover:bg-white/40'}"
+        >
+          <Send class="w-3.5 h-3.5 text-sky-600" />
+          Bot Telegram
+          {#if telegramConfig.isRunning || telegramConfig.globalBotRunning}
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          {/if}
+        </button>
       </div>
 
       <div class="p-6 space-y-4 max-h-[72vh] overflow-y-auto">
+
+        <!-- ================= RIWAYAT CHAT BOT AI TAB ================= -->
+        {#if activeTab === 'chats'}
+          <div class="space-y-4">
+            <!-- Filter & Action Controls -->
+            <div class="p-3.5 rounded-2xl bg-white/90 border border-brand-indigo/10 shadow-xs flex flex-wrap items-center justify-between gap-3">
+              <div class="flex items-center gap-2 flex-wrap">
+                <!-- Platform Filter -->
+                <select
+                  bind:value={selectedChatPlatform}
+                  on:change={() => loadBotChats()}
+                  class="px-3 py-1.5 rounded-xl bg-gray-50 border border-brand-indigo/10 text-xs font-bold text-brand-indigo outline-none cursor-pointer"
+                >
+                  <option value="ALL">Semua Platform</option>
+                  <option value="WHATSAPP">WhatsApp</option>
+                  <option value="TELEGRAM">Telegram</option>
+                </select>
+
+                <!-- Status Filter -->
+                <select
+                  bind:value={selectedChatStatus}
+                  on:change={() => loadBotChats()}
+                  class="px-3 py-1.5 rounded-xl bg-gray-50 border border-brand-indigo/10 text-xs font-bold text-brand-indigo outline-none cursor-pointer"
+                >
+                  <option value="ALL">Semua Status</option>
+                  <option value="SUCCESS">Berhasil</option>
+                  <option value="PENDING_APPROVAL">Menunggu Persetujuan</option>
+                  <option value="BLOCKED_NOT_WHITELISTED">Ditolak (Bukan Whitelist)</option>
+                  <option value="CONSULTATION">Konsultasi / Info</option>
+                  <option value="ERROR">Error / Gagal</option>
+                </select>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  on:click={() => loadBotChats()}
+                  disabled={loadingChats}
+                  class="p-2 rounded-xl bg-gray-50 hover:bg-gray-100 text-brand-indigo/70 hover:text-brand-indigo transition shadow-xs text-xs font-bold flex items-center gap-1"
+                  title="Segarkan Riwayat"
+                >
+                  <RefreshCw class="w-3.5 h-3.5 {loadingChats ? 'animate-spin' : ''}" />
+                </button>
+
+                {#if botChats.length > 0}
+                  <button
+                    type="button"
+                    on:click={handleClearChats}
+                    disabled={clearingChats}
+                    class="px-2.5 py-1.5 rounded-xl text-red-500 hover:text-red-700 hover:bg-red-50 text-xs font-bold transition flex items-center gap-1"
+                    title="Hapus Semua Riwayat"
+                  >
+                    <Trash2 class="w-3.5 h-3.5" />
+                    Hapus
+                  </button>
+                {/if}
+              </div>
+            </div>
+
+            <!-- Diagnostics Helper Card -->
+            <div class="p-3.5 rounded-2xl bg-gradient-to-r from-brand-sky-light/60 to-brand-peach-light/60 border border-brand-indigo/10 text-xs space-y-1">
+              <div class="flex items-center gap-2 font-bold text-brand-indigo">
+                <ShieldCheck class="w-4 h-4 text-emerald-600" />
+                Diagnostik Keamanan & Whitelist Bot
+              </div>
+              <p class="text-brand-indigo/70 text-[11px] leading-relaxed">
+                Monee hanya memproses pesan dari nomor WhatsApp atau ID Telegram yang sudah terdaftar di keluarga Anda. Jika nomor Anda belum terdaftar, Monee akan otomatis membalas instruksi pendaftaran dan statusnya muncul sebagai <b>Ditolak (Bukan Whitelist)</b> di bawah ini.
+              </p>
+            </div>
+
+            <!-- Message Feed -->
+            {#if loadingChats && botChats.length === 0}
+              <div class="py-12 text-center text-xs text-brand-indigo/60 space-y-2">
+                <RefreshCw class="w-5 h-5 mx-auto animate-spin text-brand-indigo/40" />
+                <p>Memuat riwayat chat...</p>
+              </div>
+            {:else if botChats.length === 0}
+              <div class="py-12 text-center text-xs text-brand-indigo/60 bg-white/70 rounded-3xl border border-dashed border-brand-indigo/20 p-6 space-y-2">
+                <MessageSquare class="w-8 h-8 mx-auto text-brand-indigo/30" />
+                <p class="font-bold text-brand-indigo">Belum ada riwayat chat yang tercatat</p>
+                <p class="text-[11px] text-brand-indigo/50 max-w-sm mx-auto">
+                  Kirim pesan teks, foto nota, atau voice note melalui WhatsApp atau Telegram untuk melihat rekaman percakapan dan respon Monee secara real-time di sini!
+                </p>
+              </div>
+            {:else}
+              <div class="space-y-3">
+                {#each botChats as chat (chat.id)}
+                  <div class="p-4 rounded-2xl bg-white border border-brand-indigo/10 shadow-xs space-y-3 transition hover:border-brand-sky/60">
+                    <!-- Header Bar of Chat -->
+                    <div class="flex items-center justify-between gap-2 flex-wrap text-xs">
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <!-- Platform Badge -->
+                        {#if chat.platform === 'WHATSAPP'}
+                          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800">
+                            <Smartphone class="w-3 h-3 text-emerald-600" />
+                            WhatsApp
+                          </span>
+                        {:else}
+                          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-sky-100 text-sky-800">
+                            <Send class="w-3 h-3 text-sky-600" />
+                            Telegram
+                          </span>
+                        {/if}
+
+                        <!-- Sender Identifier -->
+                        <span class="font-bold text-brand-indigo">
+                          {chat.senderName || (chat.user?.name) || 'Pengirim'}:
+                        </span>
+                        <span class="font-mono text-[11px] text-brand-indigo/60">
+                          {chat.senderIdentifier.startsWith('+') ? chat.senderIdentifier : `+${chat.senderIdentifier}`}
+                        </span>
+
+                        {#if chat.user}
+                          <span class="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-brand-sky/40 text-brand-indigo">
+                            {chat.user.role === 'MANAGER' ? '👑 Manager' : 'Anggota'}
+                          </span>
+                        {/if}
+                      </div>
+
+                      <div class="flex items-center gap-2">
+                        <!-- Status Badge -->
+                        {#if chat.status === 'SUCCESS'}
+                          <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">
+                            ✅ Berhasil
+                          </span>
+                        {:else if chat.status === 'PENDING_APPROVAL'}
+                          <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
+                            ⏳ Draf Menunggu
+                          </span>
+                        {:else if chat.status === 'CONSULTATION'}
+                          <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">
+                            💡 Konsultasi
+                          </span>
+                        {:else if chat.status === 'BLOCKED_NOT_WHITELISTED'}
+                          <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700">
+                            ⚠️ Belum Terdaftar
+                          </span>
+                        {:else}
+                          <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700">
+                            ❌ Error
+                          </span>
+                        {/if}
+
+                        <span class="text-[10px] text-brand-indigo/40 flex items-center gap-1">
+                          <Clock class="w-2.5 h-2.5" />
+                          {new Date(chat.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                    </div>
+
+                    <!-- User's Message Bubble -->
+                    <div class="p-3 rounded-2xl bg-gray-50 border border-gray-100 space-y-1">
+                      <div class="flex items-center justify-between text-[11px] text-brand-indigo/50">
+                        <span class="font-bold">Pesan Masuk:</span>
+                        {#if chat.messageType === 'image'}
+                          <span class="inline-flex items-center gap-1 text-purple-600 font-semibold">
+                            <Camera class="w-3 h-3" /> Foto Nota
+                          </span>
+                        {:else if chat.messageType === 'audio'}
+                          <span class="inline-flex items-center gap-1 text-amber-600 font-semibold">
+                            <Mic class="w-3 h-3" /> Voice Note
+                          </span>
+                        {/if}
+                      </div>
+                      <p class="text-xs text-brand-indigo font-medium whitespace-pre-wrap">
+                        {chat.rawContent || '(Tidak ada teks)'}
+                      </p>
+                    </div>
+
+                    <!-- Monee's Response Bubble -->
+                    {#if chat.replyContent}
+                      <div class="p-3 rounded-2xl bg-gradient-to-r from-brand-sky-light/40 to-brand-peach-light/40 border border-brand-sky/30 space-y-1">
+                        <div class="flex items-center gap-1.5 text-[11px] font-extrabold text-brand-indigo">
+                          <span>🎀 Monee:</span>
+                        </div>
+                        <p class="text-xs text-brand-indigo/90 font-medium whitespace-pre-wrap">
+                          {chat.replyContent}
+                        </p>
+                      </div>
+                    {/if}
+
+                    <!-- Blocked notice banner if not whitelisted -->
+                    {#if chat.status === 'BLOCKED_NOT_WHITELISTED'}
+                      <div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[11px] flex items-start gap-2">
+                        <AlertTriangle class="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                        <div>
+                          <b>Penyebab Ditolak:</b> Nomor <code>+{chat.senderIdentifier}</code> belum terdaftar pada akun Manager ataupun Anggota Keluarga. Silakan masukkan nomor ini di menu <b>Edit Profil</b> agar Monee segera mengenali pesan berikutnya!
+                        </div>
+                      </div>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        {/if}
 
         <!-- ================= TELEGRAM TAB ================= -->
         {#if activeTab === 'telegram'}

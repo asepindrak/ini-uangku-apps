@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../db.js';
 import { UserRole, WalletType, TransactionType } from '@prisma/client';
+import { normalizePhone } from '../utils/phone.js';
 
 export async function authRoutes(fastify: FastifyInstance) {
   // Register Manager
@@ -30,8 +31,9 @@ export async function authRoutes(fastify: FastifyInstance) {
         },
       });
 
-      const cleanPhone = (whatsappNumber || '').replace(/[^0-9]/g, '').replace(/^0+/, '');
-      const fullJid = cleanPhone ? `${(countryCode || '+62').replace('+', '')}${cleanPhone}@s.whatsapp.net` : null;
+      const phoneNorm = normalizePhone(whatsappNumber, countryCode);
+      const cleanPhone = phoneNorm.cleanDigits || null;
+      const fullJid = phoneNorm.whatsappJid || null;
 
       const user = await tx.user.create({
         data: {
@@ -40,8 +42,8 @@ export async function authRoutes(fastify: FastifyInstance) {
           email,
           passwordHash,
           role: UserRole.MANAGER,
-          countryCode: countryCode || '+62',
-          whatsappNumber: cleanPhone || null,
+          countryCode: phoneNorm.countryCode,
+          whatsappNumber: cleanPhone,
           whatsappJid: fullJid,
         },
       });
@@ -165,9 +167,9 @@ export async function authRoutes(fastify: FastifyInstance) {
       return reply.status(404).send({ error: 'User tidak ditemukan.' });
     }
 
-    const cleanPhone = (whatsappNumber || '').replace(/[^0-9]/g, '').replace(/^0+/, '');
-    const cleanCountry = (countryCode || '+62').replace('+', '');
-    const fullJid = cleanPhone ? `${cleanCountry}${cleanPhone}@s.whatsapp.net` : null;
+    const phoneNorm = normalizePhone(whatsappNumber, countryCode);
+    const cleanPhone = phoneNorm.cleanDigits || null;
+    const fullJid = phoneNorm.whatsappJid || null;
 
     // Cek apakah nomor WA sudah digunakan oleh akun lain
     if (fullJid) {
@@ -186,8 +188,8 @@ export async function authRoutes(fastify: FastifyInstance) {
       where: { id: userId },
       data: {
         ...(name ? { name: name.trim() } : {}),
-        countryCode: countryCode || '+62',
-        whatsappNumber: cleanPhone || null,
+        countryCode: phoneNorm.countryCode,
+        whatsappNumber: cleanPhone,
         whatsappJid: fullJid,
         telegramChatId: telegramChatId ? String(telegramChatId).trim() : null,
       },
