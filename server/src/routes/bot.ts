@@ -117,6 +117,17 @@ export async function botRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // POST Reset Sesi Kontak WhatsApp (Jika kontak mengalami 'Menunggu pesan ini' / E2EE Desync)
+  fastify.post('/reset-contact-session', async (request) => {
+    const { jid } = request.body as any;
+    const rawId = (jid || '').split('@')[0]?.split(':')[0];
+    if (rawId) {
+      await BotGateway.resetContactSession(rawId);
+      return { success: true, message: `Sesi kontak ${rawId} berhasil di-reset untuk handshake baru!` };
+    }
+    return { success: false, message: 'JID tidak valid' };
+  });
+
   // DELETE Hentikan dan Hapus Bot Telegram Keluarga
   fastify.delete('/telegram-config', async (request) => {
     const { familyId } = (request as any).user;

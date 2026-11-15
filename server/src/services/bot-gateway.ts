@@ -25,6 +25,25 @@ export class BotGateway {
   public static latestWaQrCode: string | null = null;
   public static isWaConnected: boolean = false;
   private static sentMessageIds: Set<string> = new Set();
+  private static sentMessageStore = new Map<string, any>();
+  private static syncAuthTimer: NodeJS.Timeout | null = null;
+
+  // External Retry Counter Cache untuk mencegah pesan 'Menunggu pesan ini' / Decryption Loop
+  private static msgRetryCounterCache = {
+    store: new Map<string, number>(),
+    get(key: string): number | undefined {
+      return this.store.get(key);
+    },
+    set(key: string, value: number) {
+      this.store.set(key, value);
+    },
+    del(key: string) {
+      this.store.delete(key);
+    },
+    flushAll() {
+      this.store.clear();
+    },
+  };
 
   // Bi-directional In-Memory Cache: WhatsApp Multi-Device LID (@lid) <-> Real Phone JID (@s.whatsapp.net)
   private static lidToJidMap = new Map<string, string>();
@@ -135,6 +154,9 @@ export class BotGateway {
     // 1. Auto-Restore sesi dari PostgreSQL jika folder lokal kosong
     await this.restoreAuthFromDB(authDir);
 
+    // Hapus sesi kontak kadaluarsa yang sempat desync agar terbentuk handshake Signal baru yang segar
+    await this.resetContactSession('17420454518973');
+
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
     const { version } = await fetchLatestBaileysVersion();
 
@@ -144,6 +166,31 @@ export class BotGateway {
       printQRInTerminal: false,
       browser: Browsers.ubuntu('Chrome'),
       markOnlineOnConnect: true,
+      msgRetryCounterCache: this.msgRetryCounterCache as any,
+      getMessage: async (key: proto.IMessageKey) => {
+        // Layani permintaan retry receipt dari ponsel pengguna jika terjadi desync
+        if (key.id && this.sentMessageStore.has(key.id)) {
+          return this.sentMessageStore.get(key.id);
+        }
+        try {
+          if (key.id) {
+            const dbMsg = await prisma.botChatMessage.findFirst({
+              where: {
+                OR: [
+                  { metadata: { contains: key.id } },
+                  { id: key.id }
+                ]
+              }
+            });
+            if (dbMsg?.replyContent) {
+              return {
+                conversation: dbMsg.replyContent,
+              };
+            }
+          }
+        } catch (_) {}
+        return proto.Message.fromObject({});
+      },
     });
 
     this.waSock = sock;
@@ -152,6 +199,7 @@ export class BotGateway {
     sock.ev.on('creds.update', async () => {
       await saveCreds();
       await this.syncCredsToDB(authDir);
+      this.scheduleDebouncedSyncAuth(authDir);
     });
 
     sock.ev.on('connection.update', async (update) => {
@@ -654,7 +702,7 @@ export class BotGateway {
             status: BotChatStatus.SUCCESS,
             metadata: { pendingActionId: activePending.id, status: response.status },
           });
-          await this.sendWhatsAppMessage(replyJid, replyMsg);
+          await this.sendWhatsAppMessage(replyJid, replyMsg, { quoted: msg });
           return;
         }
       }
@@ -1003,7 +1051,7 @@ export class BotGateway {
         replyContent: processed.replyText,
         status: BotChatStatus.CONSULTATION,
       });
-      await this.sendWhatsAppMessage(replyJid, processed.replyText);
+      await this.sendWhatsAppMessage(replyJid, processed.replyText, { quoted: msg });
       return;
     }
 
@@ -1041,7 +1089,7 @@ export class BotGateway {
         status: BotChatStatus.PENDING_APPROVAL,
         metadata: { actionType: 'UPDATE_TRANSACTION', target: processed.targetDescription },
       });
-      await this.sendWhatsAppMessage(replyJid, summaryText);
+      await this.sendWhatsAppMessage(replyJid, summaryText, { quoted: msg });
       return;
     }
 
@@ -1073,7 +1121,7 @@ export class BotGateway {
         status: BotChatStatus.PENDING_APPROVAL,
         metadata: { actionType: 'DELETE_TRANSACTION', target: processed.targetDescription },
       });
-      await this.sendWhatsAppMessage(replyJid, summaryText);
+      await this.sendWhatsAppMessage(replyJid, summaryText, { quoted: msg });
       return;
     }
 
@@ -1108,7 +1156,7 @@ export class BotGateway {
         status: BotChatStatus.PENDING_APPROVAL,
         metadata: { actionType: 'CREATE_WALLET', name: processed.walletName },
       });
-      await this.sendWhatsAppMessage(replyJid, summaryText);
+      await this.sendWhatsAppMessage(replyJid, summaryText, { quoted: msg });
       return;
     }
 
@@ -1149,7 +1197,7 @@ export class BotGateway {
         status: BotChatStatus.PENDING_APPROVAL,
         metadata: { actionType: 'TRANSFER_WALLET', amount: numAmount },
       });
-      await this.sendWhatsAppMessage(replyJid, summaryText);
+      await this.sendWhatsAppMessage(replyJid, summaryText, { quoted: msg });
       return;
     }
 
@@ -1189,7 +1237,7 @@ export class BotGateway {
         status: BotChatStatus.PENDING_APPROVAL,
         metadata: { actionType: 'SET_BUDGET', category: catName, budget: monthlyBudget },
       });
-      await this.sendWhatsAppMessage(replyJid, summaryText);
+      await this.sendWhatsAppMessage(replyJid, summaryText, { quoted: msg });
       return;
     }
 
@@ -1227,7 +1275,7 @@ export class BotGateway {
         status: BotChatStatus.PENDING_APPROVAL,
         metadata: { actionType: 'CREATE_SINKING_FUND', name: processed.sinkingFundName },
       });
-      await this.sendWhatsAppMessage(replyJid, summaryText);
+      await this.sendWhatsAppMessage(replyJid, summaryText, { quoted: msg });
       return;
     }
 
@@ -1267,7 +1315,7 @@ export class BotGateway {
         status: BotChatStatus.PENDING_APPROVAL,
         metadata: { actionType: 'CREATE_RECURRING_BILL', name: processed.billName },
       });
-      await this.sendWhatsAppMessage(replyJid, summaryText);
+      await this.sendWhatsAppMessage(replyJid, summaryText, { quoted: msg });
       return;
     }
 
@@ -1356,7 +1404,7 @@ export class BotGateway {
       metadata: { actionType: 'CREATE_TRANSACTION', amount: processed.amount, description: processed.description },
     });
 
-    await this.sendWhatsAppMessage(replyJid, summaryText);
+    await this.sendWhatsAppMessage(replyJid, summaryText, { quoted: msg });
     } catch (err: any) {
       console.error('❌ [BotGateway] Error handling incoming WhatsApp message:', err);
       const errReply = `Mohon maaf Kak, terjadi kendala saat Monee memproses pesan Anda: ${err?.message || 'Kesalahan sistem'}. Mohon coba lagi sesaat lagi ya Kak. 🎀`;
@@ -1441,9 +1489,12 @@ export class BotGateway {
       const sent = await sendWithTimeout(target);
       if (sent?.key?.id) {
         this.sentMessageIds.add(sent.key.id);
-        if (this.sentMessageIds.size > 200) {
-          const first = this.sentMessageIds.values().next().value;
-          if (first) this.sentMessageIds.delete(first);
+        if (sent.message) {
+          this.sentMessageStore.set(sent.key.id, sent.message);
+          if (this.sentMessageStore.size > 500) {
+            const oldest = this.sentMessageStore.keys().next().value;
+            if (oldest) this.sentMessageStore.delete(oldest);
+          }
         }
       }
       console.log(`[WA Gateway] Pesan berhasil terkirim ke ${target} (id: ${sent?.key?.id})`);
@@ -1458,6 +1509,9 @@ export class BotGateway {
           const fallbackSent = await sendWithTimeout(altTarget);
           if (fallbackSent?.key?.id) {
             this.sentMessageIds.add(fallbackSent.key.id);
+            if (fallbackSent.message) {
+              this.sentMessageStore.set(fallbackSent.key.id, fallbackSent.message);
+            }
           }
           console.log(`[WA Gateway] Pesan berhasil terkirim via fallback ke ${altTarget} (id: ${fallbackSent?.key?.id})`);
           return fallbackSent;
@@ -1467,6 +1521,44 @@ export class BotGateway {
       }
 
       return null;
+    }
+  }
+
+  /**
+   * Jadwalkan backup sinkronisasi berkas auth ke PostgreSQL secara ter-debounce
+   */
+  private static scheduleDebouncedSyncAuth(authDir: string) {
+    if (this.syncAuthTimer) clearTimeout(this.syncAuthTimer);
+    this.syncAuthTimer = setTimeout(() => {
+      this.syncAuthToDB(authDir);
+    }, 5000);
+  }
+
+  /**
+   * Reset / Hapus sesi kontak tertentu jika terjadi desync enkripsi E2EE ('Menunggu pesan ini')
+   */
+  public static async resetContactSession(contactRawId: string) {
+    const authDir = process.env.BAILEYS_AUTH_DIR || './baileys_auth';
+    try {
+      // 1. Hapus dari database
+      await prisma.botSession.deleteMany({
+        where: { key: { contains: contactRawId } },
+      });
+      // 2. Hapus dari disk lokal
+      if (fs.existsSync(authDir)) {
+        const files = fs.readdirSync(authDir);
+        for (const file of files) {
+          if (file.includes(contactRawId) && !file.includes('creds') && !file.includes('app-state')) {
+            try {
+              fs.unlinkSync(path.join(authDir, file));
+              console.log(`[WA Gateway] Sesi kontak lokal dibersihkan: ${file}`);
+            } catch (_) {}
+          }
+        }
+      }
+      console.log(`[WA Gateway] Sesi kontak ${contactRawId} berhasil di-reset untuk regenerasi handshake Signal.`);
+    } catch (e) {
+      console.warn('Gagal mereset sesi kontak:', e);
     }
   }
 
