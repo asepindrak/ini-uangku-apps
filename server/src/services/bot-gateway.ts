@@ -1161,6 +1161,42 @@ export class BotGateway {
       return;
     }
 
+    if (processed.actionType === 'UPDATE_WALLET') {
+      const targetWallet = wallets.find((w) => w.id === processed.targetWalletId || w.name.toLowerCase() === (processed.walletName || '').toLowerCase()) || wallets[0];
+      const newName = processed.newWalletName || targetWallet?.name;
+      const summaryText =
+        `📋 *Draf Pembaruan Nama Dompet:*\n` +
+        `• *Dompet*: ${targetWallet?.name}\n` +
+        `• *Nama Baru*: ${newName}\n\n` +
+        `👉 *Balas "Ya" untuk menyetujui, atau ketik koreksi Anda.*`;
+
+      await ApprovalEngine.createPendingAction(
+        familyId,
+        user.id,
+        ActionType.UPDATE_WALLET,
+        {
+          walletId: targetWallet.id,
+          newName,
+          newType: processed.newWalletType,
+        },
+        summaryText
+      );
+      await this.logChatMessage({
+        familyId,
+        userId: user.id,
+        platform: BotChatPlatform.WHATSAPP,
+        senderIdentifier: phoneNumber,
+        senderName: user.name,
+        messageType: 'text',
+        rawContent: textContent,
+        replyContent: summaryText,
+        status: BotChatStatus.PENDING_APPROVAL,
+        metadata: { actionType: 'UPDATE_WALLET', oldName: targetWallet?.name, newName },
+      });
+      await this.sendWhatsAppMessage(replyJid, summaryText, { quoted: msg });
+      return;
+    }
+
     if (processed.actionType === 'TRANSFER_WALLET') {
       const srcWallet = wallets.find((w) => w.id === processed.sourceWalletId) || wallets[0];
       const tgtWallet = wallets.find((w) => w.id === processed.targetWalletId) || wallets[1] || wallets[0];

@@ -80,12 +80,13 @@ export async function walletRoutes(fastify: FastifyInstance) {
   fastify.put('/:id', async (request, reply) => {
     const { familyId } = (request as any).user;
     const { id } = request.params as any;
-    const { name, balance, colorCode, isShared } = request.body as any;
+    const { name, type, balance, colorCode, isShared } = request.body as any;
 
     const updated = await prisma.wallet.updateMany({
       where: { id, familyId },
       data: {
         ...(name && { name }),
+        ...(type && { type }),
         ...(balance !== undefined && { balance: Number(balance) }),
         ...(colorCode && { colorCode }),
         ...(isShared !== undefined && { isShared: Boolean(isShared) }),

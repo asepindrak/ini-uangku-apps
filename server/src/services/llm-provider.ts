@@ -68,7 +68,8 @@ export interface ProcessedMessageResult {
     | 'SET_BUDGET'
     | 'CREATE_SINKING_FUND'
     | 'CREATE_RECURRING_BILL'
-    | 'SET_DEFAULT_WALLET';
+    | 'SET_DEFAULT_WALLET'
+    | 'UPDATE_WALLET';
   
   // CREATE_TRANSACTION:
   amount?: number;
@@ -92,10 +93,12 @@ export interface ProcessedMessageResult {
   // DELETE_TRANSACTION:
   // uses targetTransactionId, targetDescription
 
-  // CREATE_WALLET:
+  // CREATE_WALLET & UPDATE_WALLET:
   walletName?: string;
   walletType?: 'BANK' | 'E_WALLET' | 'CASH' | 'INVESTMENT';
   initialBalance?: number;
+  newWalletName?: string;
+  newWalletType?: 'BANK' | 'E_WALLET' | 'CASH' | 'INVESTMENT';
 
   // TRANSFER_WALLET:
   sourceWalletId?: string;
@@ -291,6 +294,10 @@ Analisa pesan/media dari pengguna dan tentukan intensi:
       - Mengatur dompet default pengeluaran keluarga.
       - Contoh: "jadikan Kas Tunai dompet default", "set default dompet bca", "atur dompet mandiri jadi default pengeluaran".
       - Cocokkan nama dompet dari "Daftar Dompet & Saldo" di bawah.
+   j. "UPDATE_WALLET":
+      - Mengubah / mengganti nama atau tipe dompet yang sudah ada.
+      - Contoh: "ganti nama dompet BCA Utama jadi BCA Pribadi", "ubah nama dompet Kas Tunai jadi Uang Saku", "ganti dompet BCA jadi Bank Mandiri".
+      - Cocokkan nama dompet dari "Daftar Dompet & Saldo" di bawah.
 
 2. "FINANCIAL_CONSULTATION" (Read / Analisis / Konsultasi Waktu):
    - Terpicu saat pengguna BERTANYA, meminta saran, atau bertanya riwayat transaksi ("hari ini apa aja?", "kemarin habis berapa?", "pengeluaran bulan lalu", "pengeluaran tanggal 15", "tahun ini", "apakah saya boros?", "keuangan aku gimana?").
@@ -414,6 +421,16 @@ Jika SET_DEFAULT_WALLET:
   "targetWalletId": "id-dompet-terpilih",
   "walletName": "Kas Tunai",
   "summaryMessage": "• Jadikan Dompet Default Pengeluaran: Kas Tunai"
+}
+
+Jika UPDATE_WALLET:
+{
+  "intent": "TRANSACTION_RECORD",
+  "actionType": "UPDATE_WALLET",
+  "targetWalletId": "id-dompet-lama",
+  "walletName": "BCA Utama",
+  "newWalletName": "BCA Pribadi",
+  "summaryMessage": "• Ubah Nama Dompet: BCA Utama -> BCA Pribadi"
 }
 
 Jika FINANCIAL_CONSULTATION:
@@ -599,6 +616,23 @@ Jika FINANCIAL_CONSULTATION:
           targetWalletId: targetW?.id,
           walletName: targetW?.name || parsed.walletName,
           summaryMessage: parsed.summaryMessage || `• Jadikan ${targetW?.name || 'Dompet'} sebagai dompet default pengeluaran`,
+        };
+      }
+
+      if (parsed.actionType === 'UPDATE_WALLET') {
+        const targetW = options.contextWallets.find((w) =>
+          w.id === parsed.targetWalletId ||
+          w.name.toLowerCase() === (parsed.walletName || '').toLowerCase()
+        ) || options.contextWallets[0];
+
+        return {
+          intent: 'TRANSACTION_RECORD',
+          actionType: 'UPDATE_WALLET',
+          targetWalletId: targetW?.id,
+          walletName: targetW?.name || parsed.walletName,
+          newWalletName: parsed.newWalletName || parsed.newName,
+          newWalletType: parsed.newWalletType || parsed.newType,
+          summaryMessage: parsed.summaryMessage || `• Ubah Dompet ${targetW?.name || ''} menjadi ${parsed.newWalletName || ''}`,
         };
       }
 

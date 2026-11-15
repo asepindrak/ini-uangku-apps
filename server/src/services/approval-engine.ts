@@ -425,6 +425,27 @@ export class ApprovalEngine {
         `• *Nama Dompet*: ${newWallet.name}\n` +
         `• *Tipe*: ${newWallet.type}\n` +
         `• *Saldo Awal*: Rp ${Number(newWallet.balance).toLocaleString('id-ID')}`;
+    } else if (pending.actionType === ActionType.UPDATE_WALLET) {
+      const { walletId, newName, newType } = payload;
+      const target = await prisma.wallet.findFirst({
+        where: { id: walletId, familyId: pending.familyId },
+      });
+      if (!target) throw new Error('Dompet tidak ditemukan.');
+
+      const oldName = target.name;
+      const updated = await prisma.wallet.update({
+        where: { id: target.id },
+        data: {
+          ...(newName ? { name: newName.trim() } : {}),
+          ...(newType ? { type: newType } : {}),
+        },
+      });
+
+      successMessage =
+        `✏️ *Nama Dompet Berhasil Diperbarui!*\n` +
+        `• Dari: *${oldName}*\n` +
+        `• Menjadi: *${updated.name}*` +
+        (newType ? `\n• Tipe: ${updated.type}` : '');
     } else if (pending.actionType === ActionType.TRANSFER_WALLET) {
       const { sourceWalletId, targetWalletId, amount, description = 'Transfer Antar Dompet' } = payload;
       const numAmount = Math.abs(Number(amount));
