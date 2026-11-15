@@ -3,6 +3,7 @@ import makeWASocket, {
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
   downloadMediaMessage,
+  Browsers,
   proto,
 } from '@whiskeysockets/baileys';
 import { Bot, InlineKeyboard } from 'grammy';
@@ -38,11 +39,12 @@ export class BotGateway {
     const cleanPnJid = norm.whatsappJid || (jidOrPn.includes('@') ? jidOrPn : `${jidOrPn}@s.whatsapp.net`);
 
     if (cleanLid && cleanPnJid) {
+      const fullLid = `${cleanLid}@lid`;
       this.lidToJidMap.set(cleanLid, cleanPnJid);
-      this.lidToJidMap.set(`${cleanLid}@lid`, cleanPnJid);
-      this.jidToLidMap.set(cleanPnJid, cleanLid);
+      this.lidToJidMap.set(fullLid, cleanPnJid);
+      this.jidToLidMap.set(cleanPnJid, fullLid);
       if (norm.cleanDigits) {
-        this.jidToLidMap.set(norm.cleanDigits, cleanLid);
+        this.jidToLidMap.set(norm.cleanDigits, fullLid);
       }
     }
   }
@@ -139,7 +141,8 @@ export class BotGateway {
       version,
       auth: state,
       printQRInTerminal: false,
-      browser: ['Ini Uangku', 'Chrome', '1.0.0'],
+      browser: Browsers.ubuntu('Chrome'),
+      markOnlineOnConnect: true,
     });
 
     this.waSock = sock;
@@ -531,40 +534,29 @@ export class BotGateway {
   }
 
   /**
-   * Resolusi JID tujuan pengiriman balasan WhatsApp (Selalu prioritaskan Phone JID @s.whatsapp.net daripada LID @lid)
+   * Resolusi JID tujuan pengiriman balasan WhatsApp:
+   * Selalu prioritaskan JID thread tempat pesan masuk (cleanJid / remoteJid)
+   * agar balasan langsung mendarat di percakapan aktif yang dibuka oleh pengguna.
    */
   private static resolveReplyJid(
     cleanJid: string,
     user?: any,
     msg?: proto.IWebMessageInfo
   ): string {
-    // 1. Jika user terdaftar dan punya whatsappJid (@s.whatsapp.net), gunakan langsung!
-    if (user?.whatsappJid && user.whatsappJid.endsWith('@s.whatsapp.net')) {
-      return user.whatsappJid;
+    // 1. Selalu balas langsung ke thread pesan masuk (baik itu @lid maupun @s.whatsapp.net)
+    if (cleanJid) {
+      return cleanJid;
     }
-
-    // 2. Jika user punya nomor HP WhatsApp, bangun format @s.whatsapp.net
+    if (msg?.key?.remoteJid) {
+      return msg.key.remoteJid;
+    }
+    // 2. Jika tidak ada remoteJid (misalnya notifikasi mandiri): prioritaskan LID jika ada
     if (user?.whatsappNumber) {
+      const mappedLid = this.jidToLidMap.get(user.whatsappNumber);
+      if (mappedLid) return mappedLid;
       const norm = normalizePhone(user.whatsappNumber);
       if (norm.whatsappJid) return norm.whatsappJid;
     }
-
-    // 3. Periksa metadata pesan masuk (senderPn / participantPn)
-    const key = msg?.key as any;
-    const senderPn = key?.senderPn || key?.participantPn || (msg as any)?.stanza?.attrs?.sender_pn;
-    if (senderPn) {
-      const normPn = normalizePhone(senderPn);
-      if (normPn.whatsappJid) return normPn.whatsappJid;
-    }
-
-    // 4. Periksa memory cache mapping LID -> Phone JID
-    const rawId = cleanJid.split('@')[0];
-    const cachedPn = this.lidToJidMap.get(cleanJid) || this.lidToJidMap.get(rawId);
-    if (cachedPn) {
-      return cachedPn.endsWith('@s.whatsapp.net') ? cachedPn : `${cachedPn}@s.whatsapp.net`;
-    }
-
-    // 5. Fallback ke cleanJid
     return cleanJid;
   }
 
@@ -597,6 +589,15 @@ export class BotGateway {
     try {
       // 1. Cek Whitelist: User terdaftar di database
       user = await this.resolveUserFromWhatsApp(cleanJid, phoneNumber, msg);
+
+      // Jika user terdaftar dan pesan datang dari @lid, otomatis simpan pemetaan LID <-> No HP
+      if (user && cleanJid.endsWith('@lid')) {
+        const userPhone = user.whatsappNumber || phoneNumber;
+        if (userPhone) {
+          this.saveLidMapping(cleanJid, userPhone);
+        }
+      }
+
       replyJid = this.resolveReplyJid(cleanJid, user, msg);
 
       // JIKA TIDAK ADA DI WHITELIST:
@@ -1365,7 +1366,7 @@ export class BotGateway {
   }
 
   /**
-   * Kirim pesan teks WhatsApp ke nomor tertentu (Direct Session with Fallback & Non-blocking)
+   * Kirim pesan teks WhatsApp ke nomor tertentu (Direct Session with Smart Fallback & Timeout Protection)
    */
   static async sendWhatsAppMessage(
     jid: string,
@@ -1377,9 +1378,26 @@ export class BotGateway {
       return null;
     }
 
-    const cleanTarget = jid.includes('@')
+    let target = jid.includes('@')
       ? jid.split(':')[0] + '@' + jid.split('@')[1]
       : `${jid}@s.whatsapp.net`;
+
+    // Prioritaskan LID jika target adalah nomor HP (@s.whatsapp.net) dan kita tahu mapped LID-nya
+    let altTarget: string | null = null;
+    if (target.endsWith('@s.whatsapp.net')) {
+      const rawPn = target.split('@')[0]?.split(':')[0];
+      const mappedLid = this.jidToLidMap.get(target) || this.jidToLidMap.get(rawPn);
+      if (mappedLid && mappedLid.endsWith('@lid')) {
+        altTarget = target; // fallback ke PN jika LID gagal
+        target = mappedLid; // prioritaskan kirim ke LID aktif!
+      }
+    } else if (target.endsWith('@lid')) {
+      const rawLid = target.split('@')[0]?.split(':')[0];
+      const mappedPn = this.lidToJidMap.get(target) || this.lidToJidMap.get(rawLid);
+      if (mappedPn && !mappedPn.endsWith('@lid')) {
+        altTarget = mappedPn.endsWith('@s.whatsapp.net') ? mappedPn : `${mappedPn}@s.whatsapp.net`;
+      }
+    }
 
     const msgPayload: any = { text };
     const sendOptions: any = {};
@@ -1387,9 +1405,29 @@ export class BotGateway {
       sendOptions.quoted = options.quoted;
     }
 
+    // Helper untuk mengirim pesan dengan batas waktu aman 12 detik
+    const sendWithTimeout = async (toJid: string) => {
+      let timer: NodeJS.Timeout;
+      const timeoutPromise = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Timeout 12s mengirim ke ${toJid}`)), 12000);
+      });
+      try {
+        const res = await Promise.race([
+          this.waSock!.sendMessage(toJid, msgPayload, sendOptions),
+          timeoutPromise,
+        ]);
+        clearTimeout(timer!);
+        return res;
+      } catch (e) {
+        clearTimeout(timer!);
+        throw e;
+      }
+    };
+
+    // Coba kirim ke target utama
     try {
-      console.log(`[WA Gateway] Mengirim pesan ke ${cleanTarget}...`);
-      const sent = await this.waSock.sendMessage(cleanTarget, msgPayload, sendOptions);
+      console.log(`[WA Gateway] Mengirim pesan ke ${target}...`);
+      const sent = await sendWithTimeout(target);
       if (sent?.key?.id) {
         this.sentMessageIds.add(sent.key.id);
         if (this.sentMessageIds.size > 200) {
@@ -1397,26 +1435,26 @@ export class BotGateway {
           if (first) this.sentMessageIds.delete(first);
         }
       }
-      console.log(`[WA Gateway] Pesan berhasil terkirim ke ${cleanTarget} (id: ${sent?.key?.id})`);
+      console.log(`[WA Gateway] Pesan berhasil terkirim ke ${target} (id: ${sent?.key?.id})`);
       return sent;
     } catch (err: any) {
-      console.error(`[WA Gateway] Gagal mengirim pesan ke ${cleanTarget}:`, err?.message || err);
+      console.warn(`[WA Gateway] Gagal mengirim pesan ke ${target}:`, err?.message || err);
 
-      // Fallback: Jika gagal ke LID, coba kirim ke Phone JID jika ada pemetaannya
-      if (cleanTarget.endsWith('@lid')) {
-        const rawLid = cleanTarget.split('@')[0]?.split(':')[0];
-        const mappedPn = this.lidToJidMap.get(cleanTarget) || this.lidToJidMap.get(rawLid);
-        if (mappedPn && !mappedPn.endsWith('@lid')) {
-          const fallbackTarget = mappedPn.endsWith('@s.whatsapp.net') ? mappedPn : `${mappedPn}@s.whatsapp.net`;
-          console.log(`[WA Gateway] Mencoba fallback pengiriman ke Phone JID ${fallbackTarget}...`);
-          try {
-            const fallbackSent = await this.waSock.sendMessage(fallbackTarget, msgPayload);
-            return fallbackSent;
-          } catch (fallbackErr) {
-            console.error(`[WA Gateway] Fallback ke ${fallbackTarget} juga gagal:`, fallbackErr);
+      // Coba alternate target (fallback LID <-> PN)
+      if (altTarget) {
+        console.log(`[WA Gateway] Mencoba fallback pengiriman ke alternate target ${altTarget}...`);
+        try {
+          const fallbackSent = await sendWithTimeout(altTarget);
+          if (fallbackSent?.key?.id) {
+            this.sentMessageIds.add(fallbackSent.key.id);
           }
+          console.log(`[WA Gateway] Pesan berhasil terkirim via fallback ke ${altTarget} (id: ${fallbackSent?.key?.id})`);
+          return fallbackSent;
+        } catch (fallbackErr: any) {
+          console.error(`[WA Gateway] Fallback ke ${altTarget} juga gagal:`, fallbackErr?.message || fallbackErr);
         }
       }
+
       return null;
     }
   }
