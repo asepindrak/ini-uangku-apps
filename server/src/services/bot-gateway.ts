@@ -94,12 +94,25 @@ export class BotGateway {
         // Abaikan pesan yang baru saja dikirim oleh bot Monee sendiri
         if (msg.key.id && this.sentMessageIds.has(msg.key.id)) continue;
         
+        const remoteJid = msg.key.remoteJid;
+        if (!remoteJid) continue;
+
+        // Abaikan status WhatsApp (Story), broadcast list, newsletter (channel), dan grup
+        if (
+          remoteJid === 'status@broadcast' ||
+          remoteJid.endsWith('@broadcast') ||
+          remoteJid.endsWith('@newsletter') ||
+          remoteJid.includes('@g.us')
+        ) {
+          continue;
+        }
+
         // Jika dari akun bot sendiri (fromMe)
         if (msg.key.fromMe) {
-          const myJid = sock.user?.id?.split(':')[0];
-          const targetJid = msg.key.remoteJid?.split(':')[0]?.replace('@s.whatsapp.net', '');
-          // Izinkan jika pesan dikirim ke diri sendiri (Note to Self / chat ke nomor bot sendiri)
-          if (myJid && targetJid && myJid !== targetJid) {
+          const myJid = sock.user?.id?.split(':')[0]?.replace(/[^0-9]/g, '');
+          const targetJid = remoteJid.split('@')[0]?.split(':')[0]?.replace(/[^0-9]/g, '');
+          // Hanya izinkan jika benar-benar Note to Self (chat ke nomor bot sendiri)
+          if (!myJid || !targetJid || myJid !== targetJid) {
             continue;
           }
         }
@@ -153,26 +166,37 @@ export class BotGateway {
     phoneNumber: string,
     msg?: proto.IWebMessageInfo
   ) {
+    if (
+      !cleanJid ||
+      cleanJid === 'status@broadcast' ||
+      cleanJid.endsWith('@broadcast') ||
+      cleanJid.endsWith('@newsletter')
+    ) {
+      return null;
+    }
+
     const rawId = cleanJid.split('@')[0];
     const localPhone = phoneNumber.startsWith('62') ? phoneNumber.slice(2) : phoneNumber;
-    const suffix = phoneNumber.length >= 8 ? phoneNumber.slice(-8) : phoneNumber;
+    const suffix = phoneNumber.length >= 8 ? phoneNumber.slice(-8) : '';
 
     // 1. Ekstraksi dari Sender/Participant Phone Number metadata Baileys jika ada (senderPn / participantPn)
     const key = msg?.key as any;
     const senderPn = key?.senderPn || key?.participantPn || (msg as any)?.stanza?.attrs?.sender_pn;
     if (senderPn) {
       const normPn = normalizePhone(senderPn);
-      if (normPn.cleanDigits) {
+      if (normPn.cleanDigits && normPn.cleanDigits.length >= 5) {
+        const pnOrConditions: any[] = [
+          { whatsappNumber: normPn.cleanDigits },
+          { whatsappNumber: `0${normPn.cleanDigits}` },
+          { whatsappNumber: `62${normPn.cleanDigits}` },
+          { whatsappJid: { contains: normPn.cleanDigits } },
+        ];
+        if (normPn.cleanDigits.length >= 8) {
+          pnOrConditions.push({ whatsappNumber: { endsWith: normPn.cleanDigits.slice(-8) } });
+        }
+
         const userByPn = await prisma.user.findFirst({
-          where: {
-            OR: [
-              { whatsappNumber: normPn.cleanDigits },
-              { whatsappNumber: `0${normPn.cleanDigits}` },
-              { whatsappNumber: `62${normPn.cleanDigits}` },
-              { whatsappNumber: { endsWith: normPn.cleanDigits.slice(-8) } },
-              { whatsappJid: { contains: normPn.cleanDigits } },
-            ],
-          },
+          where: { OR: pnOrConditions },
           include: { family: true },
         });
 
@@ -200,53 +224,76 @@ export class BotGateway {
       }
     }
 
-    // 2. Pencarian Langsung di Tabel User
-    let user = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { whatsappJid: cleanJid },
-          { whatsappJid: `${phoneNumber}@s.whatsapp.net` },
-          { whatsappJid: `${rawId}@lid` },
-          { whatsappNumber: phoneNumber },
-          { whatsappNumber: localPhone },
-          { whatsappNumber: `0${localPhone}` },
-          { whatsappNumber: { endsWith: suffix } },
-        ],
-      },
-      include: {
-        family: true,
-      },
-    });
+    // 2. Pencarian Langsung di Tabel User (Strict: jangan query string kosong)
+    const userOrConditions: any[] = [];
+    if (cleanJid) {
+      userOrConditions.push({ whatsappJid: cleanJid });
+    }
+    if (rawId && rawId.length >= 5) {
+      userOrConditions.push({ whatsappJid: `${rawId}@lid` });
+    }
+    if (phoneNumber && phoneNumber.length >= 5) {
+      userOrConditions.push({ whatsappJid: `${phoneNumber}@s.whatsapp.net` });
+      userOrConditions.push({ whatsappNumber: phoneNumber });
+      if (localPhone && localPhone.length >= 5) {
+        userOrConditions.push({ whatsappNumber: localPhone });
+        userOrConditions.push({ whatsappNumber: `0${localPhone}` });
+      }
+      if (suffix && suffix.length >= 6) {
+        userOrConditions.push({ whatsappNumber: { endsWith: suffix } });
+      }
+    }
+
+    let user = null;
+    if (userOrConditions.length > 0) {
+      user = await prisma.user.findFirst({
+        where: { OR: userOrConditions },
+        include: { family: true },
+      });
+    }
 
     if (user) return user;
 
-    // 3. Pencarian di Tabel BotWhitelist
-    const whitelistEntry = await prisma.botWhitelist.findFirst({
-      where: {
-        platform: 'WHATSAPP',
-        OR: [
-          { identifier: cleanJid },
-          { identifier: `${phoneNumber}@s.whatsapp.net` },
-          { identifier: `${rawId}@lid` },
-          { identifier: rawId },
-          { identifier: phoneNumber },
-          { identifier: localPhone },
-          { identifier: `0${localPhone}` },
-          { identifier: { contains: suffix } },
-          { identifier: { contains: rawId } },
-        ],
-      },
-      include: {
-        family: {
-          include: {
-            users: true,
+    // 3. Pencarian di Tabel BotWhitelist (Strict: jangan query string kosong)
+    const whitelistOrConditions: any[] = [];
+    if (cleanJid) {
+      whitelistOrConditions.push({ identifier: cleanJid });
+    }
+    if (rawId && rawId.length >= 5) {
+      whitelistOrConditions.push({ identifier: rawId });
+      whitelistOrConditions.push({ identifier: `${rawId}@lid` });
+      whitelistOrConditions.push({ identifier: { contains: rawId } });
+    }
+    if (phoneNumber && phoneNumber.length >= 5) {
+      whitelistOrConditions.push({ identifier: phoneNumber });
+      whitelistOrConditions.push({ identifier: `${phoneNumber}@s.whatsapp.net` });
+      if (localPhone && localPhone.length >= 5) {
+        whitelistOrConditions.push({ identifier: localPhone });
+        whitelistOrConditions.push({ identifier: `0${localPhone}` });
+      }
+      if (suffix && suffix.length >= 6) {
+        whitelistOrConditions.push({ identifier: { contains: suffix } });
+      }
+    }
+
+    if (whitelistOrConditions.length > 0) {
+      const whitelistEntry = await prisma.botWhitelist.findFirst({
+        where: {
+          platform: 'WHATSAPP',
+          OR: whitelistOrConditions,
+        },
+        include: {
+          family: {
+            include: {
+              users: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    if (whitelistEntry && whitelistEntry.family && whitelistEntry.family.users.length > 0) {
-      return whitelistEntry.family.users[0] as any;
+      if (whitelistEntry && whitelistEntry.family && whitelistEntry.family.users.length > 0) {
+        return whitelistEntry.family.users[0] as any;
+      }
     }
 
     // 4. Resolusi Dinamis WhatsApp LID via USync Query (sock.onWhatsApp)
@@ -349,7 +396,15 @@ export class BotGateway {
    */
   private static async handleIncomingWhatsAppMessage(msg: proto.IWebMessageInfo) {
     const rawRemoteJid = msg.key.remoteJid;
-    if (!rawRemoteJid || rawRemoteJid.includes('@g.us')) return; // Prioritaskan direct message
+    if (
+      !rawRemoteJid ||
+      rawRemoteJid === 'status@broadcast' ||
+      rawRemoteJid.endsWith('@broadcast') ||
+      rawRemoteJid.endsWith('@newsletter') ||
+      rawRemoteJid.includes('@g.us')
+    ) {
+      return; // Prioritaskan direct message, abaikan story/broadcast/channel/grup
+    }
 
     const { cleanJid, phoneNumber } = normalizeBaileysSender(rawRemoteJid);
     const msgType = Object.keys(msg.message || {})[0] || 'conversation';
