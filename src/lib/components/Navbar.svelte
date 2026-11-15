@@ -19,7 +19,9 @@
     BarChart3,
     Receipt,
     FileText,
+    Wallet,
   } from 'lucide-svelte';
+  import logoImg from '../../assets/logo.png';
 
   export let pendingCount: number = 0;
   export let activeView: 'overview' | 'analytics' | 'transactions' | 'reports' = 'overview';
@@ -29,6 +31,8 @@
   export let onOpenPending: () => void;
   export let onOpenLLMSettings: () => void;
   export let onOpenProfile: () => void;
+
+  let logoError = false;
 
   function togglePrivacy() {
     privacyMode.update((v) => !v);
@@ -53,8 +57,19 @@
     <div class="h-18 flex items-center justify-between gap-3">
       <!-- Brand Logo & Title -->
       <div class="flex items-center gap-3 cursor-pointer" on:click={() => onViewChange('overview')}>
-        <div class="relative w-11 h-11 rounded-2xl overflow-hidden shadow-sm bg-gradient-to-tr from-brand-sky via-brand-peach to-brand-butter p-0.5">
-          <img src="/logo.png" alt="Ini Uangku" class="w-full h-full object-cover rounded-[14px]" />
+        <div class="relative w-11 h-11 rounded-2xl overflow-hidden shadow-sm bg-gradient-to-tr from-brand-sky via-brand-peach to-brand-butter p-0.5 flex items-center justify-center">
+          {#if logoError}
+            <div class="w-full h-full rounded-[14px] bg-white flex items-center justify-center text-brand-indigo shadow-inner">
+              <Wallet class="w-5 h-5 text-brand-indigo" />
+            </div>
+          {:else}
+            <img
+              src={logoImg}
+              alt="Ini Uangku"
+              class="w-full h-full object-cover rounded-[14px]"
+              on:error={() => (logoError = true)}
+            />
+          {/if}
         </div>
         <div>
           <div class="flex items-center gap-2">

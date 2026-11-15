@@ -1,6 +1,6 @@
 [package]
 name = "ini_uangku"
-version = "1.2.2"
+version = "1.2.3"
 description = "Ini Uangku - Smart Family Finance Multiplatform with AI Agent"
 authors = ["Ini Uangku Team"]
 edition = "2021"

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { api } from '../api';
   import { setAuth } from '../stores/auth';
-  import { Sparkles, Lock, Mail, User, Phone, HeartHandshake } from 'lucide-svelte';
+  import { Sparkles, Lock, Mail, User, Phone, HeartHandshake, Wallet } from 'lucide-svelte';
+  import logoImg from '../../assets/logo.png';
 
   export let onLoginSuccess: () => void;
 
@@ -14,6 +15,7 @@
   let familyName = 'Keluarga Bahagia';
   let loading = false;
   let errorMsg = '';
+  let logoError = false;
 
   const countryCodes = [
     { code: '+62', label: '🇮🇩 Indonesia (+62)' },
@@ -54,8 +56,19 @@
   <div class="w-full max-w-md p-8 rounded-3xl bg-white/90 backdrop-blur-2xl border border-white/90 shadow-glass-lg space-y-6 animate-in fade-in zoom-in-95 duration-200">
     <!-- Brand Logo -->
     <div class="text-center space-y-2">
-      <div class="w-16 h-16 mx-auto rounded-3xl overflow-hidden shadow-glass bg-gradient-to-tr from-brand-sky via-brand-peach to-brand-butter p-0.5">
-        <img src="/logo.png" alt="Ini Uangku" class="w-full h-full object-cover rounded-[22px]" />
+      <div class="w-16 h-16 mx-auto rounded-3xl overflow-hidden shadow-glass bg-gradient-to-tr from-brand-sky via-brand-peach to-brand-butter p-0.5 flex items-center justify-center">
+        {#if logoError}
+          <div class="w-full h-full rounded-[22px] bg-white flex items-center justify-center text-brand-indigo shadow-inner">
+            <Wallet class="w-8 h-8 text-brand-indigo" />
+          </div>
+        {:else}
+          <img
+            src={logoImg}
+            alt="Ini Uangku"
+            class="w-full h-full object-cover rounded-[22px]"
+            on:error={() => (logoError = true)}
+          />
+        {/if}
       </div>
       <h2 class="text-2xl font-black text-brand-indigo tracking-tight font-sans">Ini Uangku</h2>
       <p class="text-xs text-brand-indigo/60 font-medium">

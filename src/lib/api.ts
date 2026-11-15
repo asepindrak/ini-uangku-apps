@@ -4,7 +4,17 @@ const DEFAULT_SERVER_URL = import.meta.env.DEV
 
 export function getServerUrl(): string {
   if (typeof localStorage !== 'undefined') {
-    return localStorage.getItem('iniuangku_server_url') || DEFAULT_SERVER_URL;
+    const custom = localStorage.getItem('iniuangku_server_url');
+    if (custom) return custom;
+  }
+  if (
+    typeof window !== 'undefined' &&
+    window.location &&
+    window.location.origin &&
+    !window.location.origin.includes('tauri.localhost') &&
+    !window.location.origin.includes('localhost:1420')
+  ) {
+    return window.location.origin;
   }
   return DEFAULT_SERVER_URL;
 }
