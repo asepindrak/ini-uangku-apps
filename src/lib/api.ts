@@ -30,7 +30,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('iniuangku_token') : null;
 
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(options.body ? { 'Content-Type': 'application/json' } : {}),
     ...(options.headers as Record<string, string>),
   };
 
@@ -44,8 +44,9 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   });
 
   if (!res.ok) {
-    const errorData = await res.json().catch(() => ({ error: 'Terjadi kesalahan pada server.' }));
-    throw new Error(errorData.error || `HTTP ${res.status}`);
+    const errorData = await res.json().catch(() => ({}));
+    const message = errorData.message || errorData.error || `HTTP ${res.status}`;
+    throw new Error(message);
   }
 
   return res.json();
@@ -73,7 +74,7 @@ export const api = {
   createWallet: (data: any) => request<any>('/api/wallets', { method: 'POST', body: JSON.stringify(data) }),
   updateWallet: (id: string, data: any) => request<any>(`/api/wallets/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteWallet: (id: string) => request<any>(`/api/wallets/${id}`, { method: 'DELETE' }),
-  setDefaultWallet: (id: string) => request<any>(`/api/wallets/${id}/set-default`, { method: 'PATCH' }),
+  setDefaultWallet: (id: string) => request<any>(`/api/wallets/${id}/set-default`, { method: 'POST', body: JSON.stringify({}) }),
 
   // Transactions
   getTransactions: (params: string = '') => request<any[]>(`/api/transactions${params}`),

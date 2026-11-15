@@ -18,6 +18,9 @@
   import EditProfileModal from './lib/components/EditProfileModal.svelte';
   import UpdateModal from './lib/components/UpdateModal.svelte';
   import AuthModal from './lib/components/AuthModal.svelte';
+  import ToastContainer from './lib/components/ToastContainer.svelte';
+  import ConfirmModal from './lib/components/ConfirmModal.svelte';
+  import { toast } from './lib/stores/toast';
 
   let activeView: 'overview' | 'analytics' | 'transactions' | 'reports' = 'overview';
 
@@ -72,8 +75,11 @@
     const name = prompt('Masukkan nama dompet baru (contoh: Dompet Ibu, Tabungan Anak):');
     if (name) {
       api.createWallet({ name, type: 'BANK', balance: 0, colorCode: '#FFC1B6' })
-        .then(() => loadDashboardData())
-        .catch((e) => alert(e.message));
+        .then(() => {
+          toast.success(`Dompet "${name}" berhasil ditambahkan!`);
+          loadDashboardData();
+        })
+        .catch((e) => toast.error(e.message || 'Gagal menambahkan dompet.'));
     }
   }
 
@@ -87,7 +93,7 @@
 
     const sourceWallet = wallets[0];
     if (!sourceWallet) {
-      alert('Buat dompet terlebih dahulu.');
+      toast.warning('Buat dompet terlebih dahulu sebelum menambahkan pos dana siaga.');
       return;
     }
 
@@ -97,8 +103,11 @@
       monthlyAlloc: Number(allocStr),
       sourceWalletId: sourceWallet.id,
     })
-      .then(() => loadDashboardData())
-      .catch((e) => alert(e.message));
+      .then(() => {
+        toast.success(`Pos dana siaga "${name}" berhasil dibuat!`);
+        loadDashboardData();
+      })
+      .catch((e) => toast.error(e.message || 'Gagal membuat pos dana siaga.'));
   }
 </script>
 
@@ -200,3 +209,7 @@
     <UpdateModal />
   </div>
 {/if}
+
+<!-- Sleek Glassmorphism Toast & Confirmation Modal -->
+<ToastContainer />
+<ConfirmModal />

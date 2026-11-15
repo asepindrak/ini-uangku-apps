@@ -4,6 +4,8 @@
   import { formatRupiah } from '../utils/format';
   import { Wallet as WalletIcon, Plus, CreditCard, Banknote, Landmark, ShieldCheck, Star, Pencil, X, Trash2, Check } from 'lucide-svelte';
   import { api } from '../api';
+  import { toast } from '../stores/toast';
+  import { confirmDialog } from '../stores/confirm';
 
   export let wallets: Wallet[] = [];
   export let onAddWallet: () => void;
@@ -47,16 +49,14 @@
         type: editType,
         balance: editBalance,
         isShared: editIsShared,
+        isDefaultExpense: editIsDefault,
       });
 
-      if (editIsDefault && !editingWallet.isDefaultExpense) {
-        await api.setDefaultWallet(editingWallet.id);
-      }
-
+      toast.success(`Perubahan dompet "${editName.trim()}" berhasil disimpan!`);
       closeEdit();
       if (onRefresh) onRefresh();
     } catch (err: any) {
-      alert(err.message || 'Gagal menyimpan perubahan dompet.');
+      toast.error(err.message || 'Gagal menyimpan perubahan dompet.');
     } finally {
       saving = false;
     }
@@ -64,14 +64,23 @@
 
   async function handleDeleteWallet() {
     if (!editingWallet) return;
-    if (!confirm(`Hapus dompet "${editingWallet.name}"? Data saldo dompet ini akan dihapus.`)) return;
+    const confirmed = await confirmDialog.confirm({
+      title: 'Hapus Dompet',
+      message: `Hapus dompet "${editingWallet.name}"? Data saldo dompet ini akan dihapus.`,
+      confirmText: 'Hapus Dompet',
+      cancelText: 'Batal',
+      isDestructive: true,
+    });
+    if (!confirmed) return;
+
     deleting = true;
     try {
       await api.deleteWallet(editingWallet.id);
+      toast.success(`Dompet "${editingWallet.name}" berhasil dihapus.`);
       closeEdit();
       if (onRefresh) onRefresh();
     } catch (err: any) {
-      alert(err.message || 'Gagal menghapus dompet.');
+      toast.error(err.message || 'Gagal menghapus dompet.');
     } finally {
       deleting = false;
     }
@@ -82,6 +91,7 @@
     settingDefaultId = wallet.id;
     try {
       await api.setDefaultWallet(wallet.id);
+      toast.success(`Dompet "${wallet.name}" kini menjadi dompet utama pengeluaran! ⭐`);
       if (onRefresh) {
         onRefresh();
       } else {
@@ -91,7 +101,7 @@
         }));
       }
     } catch (err: any) {
-      alert(err.message || 'Gagal mengatur dompet default');
+      toast.error(err.message || 'Gagal mengatur dompet default');
     } finally {
       settingDefaultId = null;
     }

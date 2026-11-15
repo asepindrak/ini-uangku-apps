@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '../api';
+  import { toast } from '../stores/toast';
   import { privacyMode } from '../stores/privacy';
   import { formatRupiah, formatDate } from '../utils/format';
   import type { Transaction, Wallet } from '../types';
@@ -114,10 +115,11 @@
     try {
       await api.deleteTransaction(t.id);
       confirmDeleteTx = null;
+      toast.success('Transaksi berhasil dihapus.');
       await fetchFilteredTransactions();
       onTransactionChanged();
     } catch (err: any) {
-      alert(err.message || 'Gagal menghapus transaksi');
+      toast.error(err.message || 'Gagal menghapus transaksi');
     } finally {
       deletingId = null;
     }
@@ -125,7 +127,7 @@
 
   function exportCSV() {
     if (transactions.length === 0) {
-      alert('Tidak ada transaksi untuk diekspor.');
+      toast.warning('Tidak ada transaksi untuk diekspor.');
       return;
     }
 

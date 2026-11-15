@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '../api';
+  import { toast } from '../stores/toast';
+  import { confirmDialog } from '../stores/confirm';
   import type { BotStatus, TelegramConfigResponse } from '../types';
   import {
     X,
@@ -134,13 +136,22 @@
   }
 
   async function handleClearChats() {
-    if (!confirm('Apakah Kakak yakin ingin menghapus seluruh riwayat percakapan bot AI ini?')) return;
+    const confirmed = await confirmDialog.confirm({
+      title: 'Hapus Riwayat Chat',
+      message: 'Apakah Kakak yakin ingin menghapus seluruh riwayat percakapan bot AI ini?',
+      confirmText: 'Hapus Riwayat',
+      cancelText: 'Batal',
+      isDestructive: true,
+    });
+    if (!confirmed) return;
+
     clearingChats = true;
     try {
       await api.clearBotChats();
       await loadBotChats();
+      toast.success('Seluruh riwayat percakapan bot berhasil dibersihkan.');
     } catch (e: any) {
-      alert(e.message || 'Gagal menghapus riwayat chat.');
+      toast.error(e.message || 'Gagal menghapus riwayat chat.');
     } finally {
       clearingChats = false;
     }
@@ -157,13 +168,14 @@
         name: chat.senderName || 'Akun Saya',
       });
       linkSuccessMsg = `Berhasil menautkan ID (+${chat.senderIdentifier}) ke Whitelist Keluarga! Monee siap memproses pesan WhatsApp berikutnya.`;
+      toast.success(`ID (+${chat.senderIdentifier}) berhasil ditautkan ke Whitelist Keluarga!`);
       await loadBotChats(false);
       await loadStatus();
       setTimeout(() => {
         linkSuccessMsg = null;
       }, 6000);
     } catch (e: any) {
-      alert(e.message || 'Gagal menautkan identifier ke whitelist.');
+      toast.error(e.message || 'Gagal menautkan identifier ke whitelist.');
     } finally {
       linkingChatId = null;
     }
@@ -213,7 +225,14 @@
   }
 
   async function handleStopTelegramBot() {
-    if (!confirm('Apakah Anda yakin ingin menonaktifkan bot Telegram mandiri keluarga ini?')) return;
+    const confirmed = await confirmDialog.confirm({
+      title: 'Nonaktifkan Bot Telegram',
+      message: 'Apakah Anda yakin ingin menonaktifkan bot Telegram mandiri keluarga ini?',
+      confirmText: 'Nonaktifkan Bot',
+      cancelText: 'Batal',
+      isDestructive: true,
+    });
+    if (!confirmed) return;
 
     savingTelegram = true;
     telegramMessage = null;
@@ -221,10 +240,12 @@
       await api.deleteTelegramConfig();
       botTokenInput = '';
       telegramMessage = { text: 'Bot Telegram mandiri dinonaktifkan. Sistem kembali menggunakan Bot Global.', type: 'success' };
+      toast.success('Bot Telegram mandiri dinonaktifkan.');
       await loadTelegramConfig();
       await loadStatus();
     } catch (e: any) {
       telegramMessage = { text: e.message || 'Gagal menghentikan bot.', type: 'error' };
+      toast.error(e.message || 'Gagal menghentikan bot.');
     } finally {
       savingTelegram = false;
     }
@@ -232,7 +253,7 @@
 
   async function handleAddWhitelist() {
     if (!newUserId.trim() || !newUserName.trim()) {
-      alert('Mohon isi User ID dan Nama Anggota.');
+      toast.warning('Mohon isi User ID dan Nama Anggota.');
       return;
     }
 
@@ -244,24 +265,33 @@
       });
       newUserId = '';
       newUserName = '';
+      toast.success('User ID berhasil ditambahkan ke whitelist.');
       await loadTelegramConfig(false);
       await loadStatus();
     } catch (e: any) {
-      alert(e.message || 'Gagal menambahkan User ID.');
+      toast.error(e.message || 'Gagal menambahkan User ID.');
     } finally {
       addingWhitelist = false;
     }
   }
 
   async function handleDeleteWhitelist(id: string) {
-    if (!confirm('Hapus User ID ini dari whitelist bot?')) return;
+    const confirmed = await confirmDialog.confirm({
+      title: 'Hapus User ID Whitelist',
+      message: 'Hapus User ID ini dari whitelist bot? Pengguna tidak akan bisa mencatat transaksi lagi.',
+      confirmText: 'Hapus',
+      cancelText: 'Batal',
+      isDestructive: true,
+    });
+    if (!confirmed) return;
 
     try {
       await api.deleteTelegramWhitelist(id);
+      toast.success('User ID berhasil dihapus dari whitelist.');
       await loadTelegramConfig(false);
       await loadStatus();
     } catch (e: any) {
-      alert(e.message || 'Gagal menghapus User ID.');
+      toast.error(e.message || 'Gagal menghapus User ID.');
     }
   }
 

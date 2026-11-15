@@ -31,7 +31,7 @@ export async function walletRoutes(fastify: FastifyInstance) {
   });
 
   // Set wallet as default expense wallet
-  fastify.patch('/:id/set-default', async (request, reply) => {
+  const handleSetDefault = async (request: any, reply: any) => {
     const { familyId } = (request as any).user;
     const { id } = request.params as any;
 
@@ -50,15 +50,26 @@ export async function walletRoutes(fastify: FastifyInstance) {
     }
 
     return { success: true };
-  });
+  };
+
+  fastify.patch('/:id/set-default', handleSetDefault);
+  fastify.post('/:id/set-default', handleSetDefault);
+  fastify.put('/:id/set-default', handleSetDefault);
 
   // Create wallet
   fastify.post('/', async (request, reply) => {
     const { familyId } = (request as any).user;
-    const { name, type = 'BANK', balance = 0, colorCode, isShared = false, userId } = request.body as any;
+    const { name, type = 'BANK', balance = 0, colorCode, isShared = false, isDefaultExpense = false, userId } = (request.body as any) || {};
 
     if (!name) {
       return reply.status(400).send({ error: 'Nama dompet wajib diisi.' });
+    }
+
+    if (isDefaultExpense) {
+      await prisma.wallet.updateMany({
+        where: { familyId },
+        data: { isDefaultExpense: false },
+      });
     }
 
     const wallet = await prisma.wallet.create({
@@ -69,6 +80,7 @@ export async function walletRoutes(fastify: FastifyInstance) {
         balance: Number(balance) || 0,
         colorCode: colorCode || '#C1ECFD',
         isShared: Boolean(isShared),
+        isDefaultExpense: Boolean(isDefaultExpense),
         userId: userId || null,
       },
     });
@@ -80,7 +92,14 @@ export async function walletRoutes(fastify: FastifyInstance) {
   fastify.put('/:id', async (request, reply) => {
     const { familyId } = (request as any).user;
     const { id } = request.params as any;
-    const { name, type, balance, colorCode, isShared } = request.body as any;
+    const { name, type, balance, colorCode, isShared, isDefaultExpense } = (request.body as any) || {};
+
+    if (isDefaultExpense === true) {
+      await prisma.wallet.updateMany({
+        where: { familyId },
+        data: { isDefaultExpense: false },
+      });
+    }
 
     const updated = await prisma.wallet.updateMany({
       where: { id, familyId },
@@ -90,8 +109,13 @@ export async function walletRoutes(fastify: FastifyInstance) {
         ...(balance !== undefined && { balance: Number(balance) }),
         ...(colorCode && { colorCode }),
         ...(isShared !== undefined && { isShared: Boolean(isShared) }),
+        ...(isDefaultExpense !== undefined && { isDefaultExpense: Boolean(isDefaultExpense) }),
       },
     });
+
+    if (updated.count === 0) {
+      return reply.status(404).send({ error: 'Dompet tidak ditemukan.' });
+    }
 
     return { success: true };
   });

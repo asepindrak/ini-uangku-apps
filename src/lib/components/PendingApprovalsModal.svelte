@@ -2,6 +2,7 @@
   import type { PendingAction } from '../types';
   import { formatRupiah, formatDate } from '../utils/format';
   import { api } from '../api';
+  import { toast } from '../stores/toast';
   import { X, Check, AlertTriangle, Clock, ShieldCheck, Sparkles } from 'lucide-svelte';
 
   export let pendingActions: PendingAction[] = [];
@@ -30,7 +31,7 @@
         }
       }, 1200);
     } catch (err: any) {
-      alert(err.message || 'Gagal memproses persetujuan');
+      toast.error(err.message || 'Gagal memproses persetujuan');
     } finally {
       loadingId = null;
     }

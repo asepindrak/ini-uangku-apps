@@ -3,6 +3,8 @@
   import qrcode from 'qrcode';
   import { api } from '../api';
   import { auth } from '../stores/auth';
+  import { toast } from '../stores/toast';
+  import { confirmDialog } from '../stores/confirm';
   import { X, Copy, Check, Share2, QrCode, UserPlus, Phone, Send, Clock, Globe, Sparkles, Users, Trash2 } from 'lucide-svelte';
 
   export let isOpen: boolean = false;
@@ -83,16 +85,22 @@
   }
 
   async function handleDeleteMember(member: any) {
-    if (!confirm(`Hapus ${member.name} dari keluarga? Anggota ini tidak akan bisa lagi mengakses data atau mencatat via bot.`)) {
-      return;
-    }
+    const confirmed = await confirmDialog.confirm({
+      title: 'Hapus Anggota Keluarga',
+      message: `Hapus ${member.name} dari keluarga? Anggota ini tidak akan bisa lagi mengakses data atau mencatat via bot.`,
+      confirmText: 'Hapus Anggota',
+      cancelText: 'Batal',
+      isDestructive: true,
+    });
+    if (!confirmed) return;
 
     try {
       await api.deleteMember(member.id);
+      toast.success(`${member.name} berhasil dihapus dari keluarga.`);
       await loadMembers();
       onMemberAdded();
     } catch (err: any) {
-      alert(err.message || 'Gagal menghapus anggota.');
+      toast.error(err.message || 'Gagal menghapus anggota.');
     }
   }
 
