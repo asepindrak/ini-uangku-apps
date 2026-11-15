@@ -70,6 +70,8 @@
   let clearingChats = false;
   let selectedChatPlatform: 'ALL' | 'WHATSAPP' | 'TELEGRAM' = 'ALL';
   let selectedChatStatus: string = 'ALL';
+  let linkingChatId: string | null = null;
+  let linkSuccessMsg: string | null = null;
 
   onMount(() => {
     if (isOpen) {
@@ -141,6 +143,29 @@
       alert(e.message || 'Gagal menghapus riwayat chat.');
     } finally {
       clearingChats = false;
+    }
+  }
+
+  async function handleLinkIdentifier(chat: any) {
+    if (!chat.senderIdentifier) return;
+    linkingChatId = chat.id;
+    linkSuccessMsg = null;
+    try {
+      await api.addBotWhitelist({
+        platform: chat.platform,
+        identifier: chat.senderIdentifier,
+        name: chat.senderName || 'Akun Saya',
+      });
+      linkSuccessMsg = `Berhasil menautkan ID (+${chat.senderIdentifier}) ke Whitelist Keluarga! Monee siap memproses pesan WhatsApp berikutnya.`;
+      await loadBotChats(false);
+      await loadStatus();
+      setTimeout(() => {
+        linkSuccessMsg = null;
+      }, 6000);
+    } catch (e: any) {
+      alert(e.message || 'Gagal menautkan identifier ke whitelist.');
+    } finally {
+      linkingChatId = null;
     }
   }
 
@@ -381,6 +406,14 @@
               </p>
             </div>
 
+            <!-- Success Alert when linking ID -->
+            {#if linkSuccessMsg}
+              <div class="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                <CheckCircle2 class="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{linkSuccessMsg}</span>
+              </div>
+            {/if}
+
             <!-- Message Feed -->
             {#if loadingChats && botChats.length === 0}
               <div class="py-12 text-center text-xs text-brand-indigo/60 space-y-2">
@@ -492,12 +525,34 @@
                       </div>
                     {/if}
 
-                    <!-- Blocked notice banner if not whitelisted -->
+                    <!-- Blocked notice banner with 1-Click Link Button -->
                     {#if chat.status === 'BLOCKED_NOT_WHITELISTED'}
-                      <div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[11px] flex items-start gap-2">
-                        <AlertTriangle class="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                        <div>
-                          <b>Penyebab Ditolak:</b> Nomor <code>+{chat.senderIdentifier}</code> belum terdaftar pada akun Manager ataupun Anggota Keluarga. Silakan masukkan nomor ini di menu <b>Edit Profil</b> agar Monee segera mengenali pesan berikutnya!
+                      <div class="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-200/80 text-amber-900 text-xs space-y-2.5">
+                        <div class="flex items-start gap-2.5">
+                          <AlertTriangle class="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                          <div class="space-y-1">
+                            <p class="font-bold">Akun Belum Terdaftar di Whitelist Keluarga</p>
+                            <p class="text-[11px] text-amber-800 leading-relaxed">
+                              Nomor/ID <code>+{chat.senderIdentifier}</code> belum terhubung ke keluarga Anda. Jika ini adalah akun WhatsApp/Telegram Anda atau anggota keluarga Anda, klik tombol di bawah untuk langsung menautkannya secara instan!
+                            </p>
+                          </div>
+                        </div>
+
+                        <div class="flex items-center gap-2 pt-0.5">
+                          <button
+                            type="button"
+                            on:click={() => handleLinkIdentifier(chat)}
+                            disabled={linkingChatId === chat.id}
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs shadow-xs transition hover:scale-[1.02] disabled:opacity-50 cursor-pointer"
+                          >
+                            {#if linkingChatId === chat.id}
+                              <RefreshCw class="w-3.5 h-3.5 animate-spin" />
+                              <span>Menautkan ID...</span>
+                            {:else}
+                              <ShieldCheck class="w-3.5 h-3.5" />
+                              <span>⚡ Tautkan ID (+{chat.senderIdentifier}) ke Akun Saya</span>
+                            {/if}
+                          </button>
                         </div>
                       </div>
                     {/if}

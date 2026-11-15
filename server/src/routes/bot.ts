@@ -119,7 +119,64 @@ export async function botRoutes(fastify: FastifyInstance) {
     return { success: true, message: 'Bot Telegram keluarga berhasil dinonaktifkan.' };
   });
 
-  // POST Tambah ID Telegram ke Whitelist Keluarga
+  // POST Tambah ID (WhatsApp atau Telegram) ke Whitelist Keluarga
+  fastify.post('/whitelist', async (request, reply) => {
+    const { familyId } = (request as any).user;
+    const {
+      platform = 'WHATSAPP',
+      identifier,
+      name,
+      canRecord = true,
+      canViewReports = true,
+    } = request.body as any;
+
+    if (!identifier) {
+      return reply.status(400).send({ error: 'Identifier (Nomor/ID) wajib diisi.' });
+    }
+
+    const cleanedId = String(identifier).trim();
+    const targetPlatform = String(platform).toUpperCase() === 'TELEGRAM' ? 'TELEGRAM' : 'WHATSAPP';
+    const entryName = (name || (targetPlatform === 'TELEGRAM' ? 'Akun Telegram' : 'Akun WhatsApp')).trim();
+
+    const entry = await prisma.botWhitelist.upsert({
+      where: {
+        familyId_platform_identifier: {
+          familyId,
+          platform: targetPlatform as any,
+          identifier: cleanedId,
+        },
+      },
+      update: {
+        name: entryName,
+        canRecord: Boolean(canRecord),
+        canViewReports: Boolean(canViewReports),
+      },
+      create: {
+        familyId,
+        platform: targetPlatform as any,
+        identifier: cleanedId,
+        name: entryName,
+        canRecord: Boolean(canRecord),
+        canViewReports: Boolean(canViewReports),
+      },
+    });
+
+    return { success: true, entry };
+  });
+
+  // DELETE Hapus ID dari Whitelist
+  fastify.delete('/whitelist/:id', async (request) => {
+    const { familyId } = (request as any).user;
+    const { id } = request.params as any;
+
+    await prisma.botWhitelist.deleteMany({
+      where: { id, familyId },
+    });
+
+    return { success: true, message: 'ID berhasil dihapus dari whitelist.' };
+  });
+
+  // POST Tambah ID Telegram ke Whitelist Keluarga (Legacy alias)
   fastify.post('/telegram-whitelist', async (request, reply) => {
     const { familyId } = (request as any).user;
     const { identifier, name, canRecord = true, canViewReports = true } = request.body as any;

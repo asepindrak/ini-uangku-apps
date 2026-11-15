@@ -15,7 +15,7 @@ import { LLMProviderService } from './llm-provider.js';
 import { ApprovalEngine } from './approval-engine.js';
 import { FinancialReportsService } from './financial-reports.js';
 import { TimezoneService } from './timezone-service.js';
-import { normalizeBaileysSender } from '../utils/phone.js';
+import { normalizeBaileysSender, normalizePhone } from '../utils/phone.js';
 import { ActionType, InputSource, TransactionType, BotChatPlatform, BotChatStatus } from '@prisma/client';
 
 export class BotGateway {
@@ -146,17 +146,67 @@ export class BotGateway {
   }
 
   /**
-   * Cari User / Whitelist secara cerdas dan toleran terhadap berbagai format nomor WhatsApp
+   * Resolusi identitas pengguna dari WhatsApp (Mendukung Phone Number, JID, WhatsApp Multi-Device LID, dan PushName Auto-Discovery)
    */
-  private static async resolveUserFromWhatsApp(cleanJid: string, phoneNumber: string) {
+  private static async resolveUserFromWhatsApp(
+    cleanJid: string,
+    phoneNumber: string,
+    msg?: proto.IWebMessageInfo
+  ) {
+    const rawId = cleanJid.split('@')[0];
     const localPhone = phoneNumber.startsWith('62') ? phoneNumber.slice(2) : phoneNumber;
     const suffix = phoneNumber.length >= 8 ? phoneNumber.slice(-8) : phoneNumber;
 
+    // 1. Ekstraksi dari Sender/Participant Phone Number metadata Baileys jika ada (senderPn / participantPn)
+    const key = msg?.key as any;
+    const senderPn = key?.senderPn || key?.participantPn || (msg as any)?.stanza?.attrs?.sender_pn;
+    if (senderPn) {
+      const normPn = normalizePhone(senderPn);
+      if (normPn.cleanDigits) {
+        const userByPn = await prisma.user.findFirst({
+          where: {
+            OR: [
+              { whatsappNumber: normPn.cleanDigits },
+              { whatsappNumber: `0${normPn.cleanDigits}` },
+              { whatsappNumber: `62${normPn.cleanDigits}` },
+              { whatsappNumber: { endsWith: normPn.cleanDigits.slice(-8) } },
+              { whatsappJid: { contains: normPn.cleanDigits } },
+            ],
+          },
+          include: { family: true },
+        });
+
+        if (userByPn) {
+          try {
+            await prisma.botWhitelist.upsert({
+              where: {
+                familyId_platform_identifier: {
+                  familyId: userByPn.familyId,
+                  platform: 'WHATSAPP',
+                  identifier: rawId,
+                },
+              },
+              update: { name: userByPn.name },
+              create: {
+                familyId: userByPn.familyId,
+                platform: 'WHATSAPP',
+                identifier: rawId,
+                name: userByPn.name,
+              },
+            });
+          } catch (_) {}
+          return userByPn;
+        }
+      }
+    }
+
+    // 2. Pencarian Langsung di Tabel User
     let user = await prisma.user.findFirst({
       where: {
         OR: [
           { whatsappJid: cleanJid },
           { whatsappJid: `${phoneNumber}@s.whatsapp.net` },
+          { whatsappJid: `${rawId}@lid` },
           { whatsappNumber: phoneNumber },
           { whatsappNumber: localPhone },
           { whatsappNumber: `0${localPhone}` },
@@ -170,16 +220,20 @@ export class BotGateway {
 
     if (user) return user;
 
+    // 3. Pencarian di Tabel BotWhitelist
     const whitelistEntry = await prisma.botWhitelist.findFirst({
       where: {
         platform: 'WHATSAPP',
         OR: [
           { identifier: cleanJid },
           { identifier: `${phoneNumber}@s.whatsapp.net` },
+          { identifier: `${rawId}@lid` },
+          { identifier: rawId },
           { identifier: phoneNumber },
           { identifier: localPhone },
           { identifier: `0${localPhone}` },
           { identifier: { contains: suffix } },
+          { identifier: { contains: rawId } },
         ],
       },
       include: {
@@ -193,6 +247,98 @@ export class BotGateway {
 
     if (whitelistEntry && whitelistEntry.family && whitelistEntry.family.users.length > 0) {
       return whitelistEntry.family.users[0] as any;
+    }
+
+    // 4. Resolusi Dinamis WhatsApp LID via USync Query (sock.onWhatsApp)
+    if (this.waSock && (cleanJid.includes('@lid') || phoneNumber.length > 13)) {
+      try {
+        const candidateUsers = await prisma.user.findMany({
+          where: { whatsappNumber: { not: null } },
+          include: { family: true },
+        });
+
+        for (const cand of candidateUsers) {
+          if (!cand.whatsappNumber) continue;
+          const norm = normalizePhone(cand.whatsappNumber);
+          if (!norm.fullNumber) continue;
+
+          try {
+            const results = await this.waSock.onWhatsApp(norm.fullNumber);
+            if (results && results.length > 0) {
+              const match = results.find(
+                (r: any) =>
+                  r.lid &&
+                  (r.lid.includes(rawId) ||
+                    r.lid.includes(phoneNumber) ||
+                    r.lid.split('@')[0]?.split(':')[0] === rawId)
+              );
+              if (match) {
+                console.log(`[WA Gateway] Auto-resolved LID ${cleanJid} to user ${cand.name} (${norm.fullNumber})!`);
+                await prisma.botWhitelist.upsert({
+                  where: {
+                    familyId_platform_identifier: {
+                      familyId: cand.familyId,
+                      platform: 'WHATSAPP',
+                      identifier: rawId,
+                    },
+                  },
+                  update: { name: cand.name },
+                  create: {
+                    familyId: cand.familyId,
+                    platform: 'WHATSAPP',
+                    identifier: rawId,
+                    name: cand.name,
+                  },
+                });
+                return cand;
+              }
+            }
+          } catch (_) {}
+        }
+      } catch (err) {
+        console.warn('[WA Gateway] USync lookup warning:', err);
+      }
+    }
+
+    // 5. Fallback Auto-Discovery berdasarkan PushName dan Email / Nama Pengguna
+    if (msg?.pushName) {
+      const pushNameStr = String(msg.pushName).trim();
+      const cleanPush = pushNameStr.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+      if (cleanPush.length >= 4) {
+        const matchedUser = await prisma.user.findFirst({
+          where: {
+            OR: [
+              { name: { contains: pushNameStr, mode: 'insensitive' } },
+              { email: { startsWith: cleanPush, mode: 'insensitive' } },
+            ],
+          },
+          include: { family: true },
+        });
+
+        if (matchedUser) {
+          console.log(`[WA Gateway] Auto-matched user by pushName '${pushNameStr}' -> ${matchedUser.name}`);
+          try {
+            await prisma.botWhitelist.upsert({
+              where: {
+                familyId_platform_identifier: {
+                  familyId: matchedUser.familyId,
+                  platform: 'WHATSAPP',
+                  identifier: rawId,
+                },
+              },
+              update: { name: `${matchedUser.name} (${pushNameStr})` },
+              create: {
+                familyId: matchedUser.familyId,
+                platform: 'WHATSAPP',
+                identifier: rawId,
+                name: `${matchedUser.name} (${pushNameStr})`,
+              },
+            });
+          } catch (_) {}
+          return matchedUser;
+        }
+      }
     }
 
     return null;
@@ -217,19 +363,22 @@ export class BotGateway {
 
     try {
       // 1. Cek Whitelist: User terdaftar di database
-      user = await this.resolveUserFromWhatsApp(cleanJid, phoneNumber);
+      user = await this.resolveUserFromWhatsApp(cleanJid, phoneNumber, msg);
 
       // JIKA TIDAK ADA DI WHITELIST:
       // Jangan silent drop! Beri tahu pengguna bahwa nomornya belum terdaftar dan catat ke riwayat chat.
       if (!user) {
         console.log(`[WA Whitelist Guard] Pesan dari ${cleanJid} (${phoneNumber}) diabaikan (belum terdaftar).`);
 
+        const pushGreeting = msg.pushName ? ` ${msg.pushName}` : '';
         const unwhitelistedReply =
-          `Halo Kak! 👋\n\n` +
-          `Nomor WhatsApp ini (*+${phoneNumber}*) belum terdaftar pada keluarga aktif di aplikasi *Ini Uangku*.\n\n` +
-          `👉 *Jika Anda Manager:* Masuk ke aplikasi Ini Uangku di menu *Edit Profil*, lalu simpan nomor WhatsApp ini (*${phoneNumber.startsWith('62') ? '0' + phoneNumber.slice(2) : phoneNumber}*).\n` +
-          `👉 *Jika Anda Anggota Keluarga:* Mintalah Manager keluarga Anda untuk menambahkan nomor ini melalui menu *Undang Keluarga*.\n\n` +
-          `Setelah nomor terdaftar, Monee langsung siap membantu mencatat nota, voice note, dan mengelola keuangan keluarga Kakak! 🎀`;
+          `Halo Kak${pushGreeting}! 👋\n\n` +
+          `Nomor / Akun WhatsApp ini (*+${phoneNumber}*) belum terhubung ke keluarga aktif di aplikasi *Ini Uangku*.\n\n` +
+          `👉 *Cara Menghubungkan 1-Klik:*\n` +
+          `Buka aplikasi *Ini Uangku* -> Klik menu *Bot Status* -> Tab *Riwayat Chat AI* -> Klik tombol *⚡ Tautkan ID Ini ke Akun Saya*!\n\n` +
+          `👉 *Atau Melalui Edit Profil:*\n` +
+          `Masuk ke aplikasi di menu *Edit Profil*, lalu simpan nomor WhatsApp Kakak (*${phoneNumber.startsWith('62') ? '0' + phoneNumber.slice(2) : phoneNumber}*).\n\n` +
+          `Setelah terhubung, Monee langsung siap membantu mencatat nota, voice note, dan konsultasi keuangan keluarga Kakak! 🎀`;
 
         await this.logChatMessage({
           platform: BotChatPlatform.WHATSAPP,

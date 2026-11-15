@@ -101,6 +101,10 @@ export const api = {
   getTelegramConfig: () => request<any>('/api/bot/telegram-config'),
   updateTelegramConfig: (data: { botToken: string }) => request<any>('/api/bot/telegram-config', { method: 'PUT', body: JSON.stringify(data) }),
   deleteTelegramConfig: () => request<any>('/api/bot/telegram-config', { method: 'DELETE' }),
+  // Whitelist (Unified WhatsApp & Telegram)
+  addBotWhitelist: (data: { platform: 'WHATSAPP' | 'TELEGRAM'; identifier: string; name: string }) =>
+    request<any>('/api/bot/whitelist', { method: 'POST', body: JSON.stringify(data) }),
+  deleteBotWhitelist: (id: string) => request<any>(`/api/bot/whitelist/${id}`, { method: 'DELETE' }),
   addTelegramWhitelist: (data: { identifier: string; name: string }) => request<any>('/api/bot/telegram-whitelist', { method: 'POST', body: JSON.stringify(data) }),
   deleteTelegramWhitelist: (id: string) => request<any>(`/api/bot/telegram-whitelist/${id}`, { method: 'DELETE' }),
   getLLMConfig: () => request<any>('/api/llm/config'),
