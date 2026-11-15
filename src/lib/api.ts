@@ -71,6 +71,7 @@ export const api = {
   createWallet: (data: any) => request<any>('/api/wallets', { method: 'POST', body: JSON.stringify(data) }),
   updateWallet: (id: string, data: any) => request<any>(`/api/wallets/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteWallet: (id: string) => request<any>(`/api/wallets/${id}`, { method: 'DELETE' }),
+  setDefaultWallet: (id: string) => request<any>(`/api/wallets/${id}/set-default`, { method: 'PATCH' }),
 
   // Transactions
   getTransactions: (params: string = '') => request<any[]>(`/api/transactions${params}`),

@@ -29,6 +29,7 @@ export interface Wallet {
   balance: number;
   colorCode?: string;
   isShared: boolean;
+  isDefaultExpense?: boolean;
   userId?: string;
   userName?: string;
 }

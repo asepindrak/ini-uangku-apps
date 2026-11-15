@@ -83,6 +83,7 @@ model Wallet {
   balance         Decimal         @default(0) @db.Decimal(15, 2)
   colorCode       String?
   isShared        Boolean         @default(false)
+  isDefaultExpense Boolean        @default(false)
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   transactions    Transaction[]
@@ -164,6 +165,7 @@ enum ActionType {
   CREATE_RECURRING_BILL
   EXECUTE_RECURRING_BILL
   EXECUTE_SINKING_FUND
+  SET_DEFAULT_WALLET
 }
 
 enum ActionStatus {

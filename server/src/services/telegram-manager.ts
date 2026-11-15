@@ -445,7 +445,7 @@ export class TelegramManager {
     ] = await Promise.all([
       prisma.wallet.findMany({
         where: { familyId },
-        select: { id: true, name: true, type: true, balance: true },
+        select: { id: true, name: true, type: true, balance: true, isDefaultExpense: true },
       }),
       prisma.category.findMany({
         where: { familyId },
@@ -588,6 +588,7 @@ export class TelegramManager {
         name: w.name,
         type: w.type,
         balance: Number(w.balance),
+        isDefaultExpense: !!w.isDefaultExpense,
       })),
       contextCategories: categories.map((c) => ({
         id: c.id,
@@ -799,6 +800,25 @@ export class TelegramManager {
           dueDayOfMonth: processed.dueDayOfMonth || 1,
           walletId: processed.walletId || defaultWallet?.id,
           categoryId: processed.categoryId || defaultCat?.id,
+        },
+        summaryText
+      );
+      return;
+    }
+
+    if (processed.actionType === 'SET_DEFAULT_WALLET') {
+      const targetWallet = wallets.find((w) => w.id === processed.targetWalletId || w.name.toLowerCase() === (processed.walletName || '').toLowerCase()) || wallets[0];
+      const summaryText =
+        `📋 *Draf Pengaturan Dompet Default Pengeluaran:*\n` +
+        `• *Dompet*: ${targetWallet?.name}\n\n` +
+        `Jika disetujui, setiap pengeluaran baru yang tidak menyebutkan dompet akan otomatis dialokasikan ke *${targetWallet?.name}*.\n\n` +
+        `👉 *Ketuk tombol di bawah atau balas "Ya" untuk menyetujui:*`;
+
+      await sendDraftWithButtons(
+        ActionType.SET_DEFAULT_WALLET,
+        {
+          targetWalletId: targetWallet.id,
+          walletName: targetWallet.name,
         },
         summaryText
       );

@@ -866,7 +866,7 @@ export class BotGateway {
     ] = await Promise.all([
       prisma.wallet.findMany({
         where: { familyId },
-        select: { id: true, name: true, type: true, balance: true },
+        select: { id: true, name: true, type: true, balance: true, isDefaultExpense: true },
       }),
       prisma.category.findMany({
         where: { familyId },
@@ -1010,6 +1010,7 @@ export class BotGateway {
         name: w.name,
         type: w.type,
         balance: Number(w.balance),
+        isDefaultExpense: !!w.isDefaultExpense,
       })),
       contextCategories: categories.map((c) => ({
         id: c.id,
@@ -1314,6 +1315,40 @@ export class BotGateway {
         replyContent: summaryText,
         status: BotChatStatus.PENDING_APPROVAL,
         metadata: { actionType: 'CREATE_RECURRING_BILL', name: processed.billName },
+      });
+      await this.sendWhatsAppMessage(replyJid, summaryText, { quoted: msg });
+      return;
+    }
+
+    if (processed.actionType === 'SET_DEFAULT_WALLET') {
+      const targetWallet = wallets.find((w) => w.id === processed.targetWalletId || w.name.toLowerCase() === (processed.walletName || '').toLowerCase()) || wallets[0];
+      const summaryText =
+        `📋 *Draf Pengaturan Dompet Default Pengeluaran:*\n` +
+        `• *Dompet*: ${targetWallet?.name}\n\n` +
+        `Jika disetujui, setiap pengeluaran baru yang tidak menyebutkan dompet akan otomatis memakai *${targetWallet?.name}*.\n\n` +
+        `👉 *Balas "Ya" untuk menyetujui, atau ketik koreksi Anda.*`;
+
+      await ApprovalEngine.createPendingAction(
+        familyId,
+        user.id,
+        ActionType.SET_DEFAULT_WALLET,
+        {
+          targetWalletId: targetWallet.id,
+          walletName: targetWallet.name,
+        },
+        summaryText
+      );
+      await this.logChatMessage({
+        familyId,
+        userId: user.id,
+        platform: BotChatPlatform.WHATSAPP,
+        senderIdentifier: phoneNumber,
+        senderName: user.name,
+        messageType: 'text',
+        rawContent: textContent,
+        replyContent: summaryText,
+        status: BotChatStatus.PENDING_APPROVAL,
+        metadata: { actionType: 'SET_DEFAULT_WALLET', walletName: targetWallet.name },
       });
       await this.sendWhatsAppMessage(replyJid, summaryText, { quoted: msg });
       return;

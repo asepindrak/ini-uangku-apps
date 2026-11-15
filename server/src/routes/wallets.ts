@@ -24,9 +24,32 @@ export async function walletRoutes(fastify: FastifyInstance) {
       balance: Number(w.balance),
       colorCode: w.colorCode,
       isShared: w.isShared,
+      isDefaultExpense: w.isDefaultExpense,
       userId: w.userId,
       userName: w.user?.name,
     }));
+  });
+
+  // Set wallet as default expense wallet
+  fastify.patch('/:id/set-default', async (request, reply) => {
+    const { familyId } = (request as any).user;
+    const { id } = request.params as any;
+
+    await prisma.wallet.updateMany({
+      where: { familyId },
+      data: { isDefaultExpense: false },
+    });
+
+    const updated = await prisma.wallet.updateMany({
+      where: { id, familyId },
+      data: { isDefaultExpense: true },
+    });
+
+    if (updated.count === 0) {
+      return reply.status(404).send({ error: 'Dompet tidak ditemukan.' });
+    }
+
+    return { success: true };
   });
 
   // Create wallet

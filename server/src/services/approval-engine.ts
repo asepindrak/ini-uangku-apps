@@ -624,6 +624,23 @@ export class ApprovalEngine {
 
       const updatedFund = await prisma.sinkingFund.findUnique({ where: { id: fundId } });
       successMessage = `💰 *Alokasi Dana Siaga Berhasil!*\n• Pos: ${name}\n• Nominal: Rp ${numAmount.toLocaleString('id-ID')}\n• Total Terkumpul: Rp ${Number(updatedFund?.currentAmount || 0).toLocaleString('id-ID')} / Target Rp ${Number(updatedFund?.targetAmount || 0).toLocaleString('id-ID')}`;
+    } else if (pending.actionType === ActionType.SET_DEFAULT_WALLET) {
+      const { targetWalletId, walletName } = payload;
+      if (!targetWalletId) throw new Error('Target dompet tidak valid');
+
+      await prisma.$transaction(async (tx) => {
+        await tx.wallet.updateMany({
+          where: { familyId: pending.familyId },
+          data: { isDefaultExpense: false },
+        });
+
+        await tx.wallet.update({
+          where: { id: targetWalletId },
+          data: { isDefaultExpense: true },
+        });
+      });
+
+      successMessage = `⭐ *Dompet Default Pengeluaran Berhasil Diatur!*\n• Dompet Utama: *${walletName || 'Dompet'}*\n\nMulai sekarang, setiap transaksi pengeluaran baru yang tidak menyebutkan nama dompet akan otomatis dialokasikan ke *${walletName || 'dompet ini'}*! 🎀✨`;
     }
 
     // Tandai action menjadi APPROVED

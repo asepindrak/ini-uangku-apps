@@ -123,6 +123,7 @@
         <WalletCarousel
           {wallets}
           onAddWallet={handleAddWallet}
+          onRefresh={loadDashboardData}
         />
 
         <!-- 3. Sinking Funds List -->

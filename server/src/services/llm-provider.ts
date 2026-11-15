@@ -11,7 +11,7 @@ export interface LLMPayloadOptions {
   audioBase64?: string;
   audioMimeType?: string;
   rawText?: string;
-  contextWallets: Array<{ id: string; name: string; type: string; balance?: number | any }>;
+  contextWallets: Array<{ id: string; name: string; type: string; balance?: number | any; isDefaultExpense?: boolean }>;
   contextCategories: Array<{ id: string; name: string; monthlyBudget?: number | any; alertThreshold?: number | any }>;
   recentTransactions?: Array<{
     id?: string;
@@ -67,7 +67,8 @@ export interface ProcessedMessageResult {
     | 'TRANSFER_WALLET'
     | 'SET_BUDGET'
     | 'CREATE_SINKING_FUND'
-    | 'CREATE_RECURRING_BILL';
+    | 'CREATE_RECURRING_BILL'
+    | 'SET_DEFAULT_WALLET';
   
   // CREATE_TRANSACTION:
   amount?: number;
@@ -256,6 +257,18 @@ Analisa pesan/media dari pengguna dan tentukan intensi:
       - Resolusikan tanggal transaksi jika pengguna menyebutkan waktu (misal: "kemarin beli bensin 50rb" -> transactionDate diisi tanggal kemarin format ISO YYYY-MM-DD). Jika tidak menyebutkan waktu, gunakan tanggal hari ini (${currentIso}).
       - PENTING ATURAN RINCIAN ITEM: Jika pengguna merinci beberapa barang dengan harganya masing-masing (misal: "Beli beras 70rb, telur 25rb, minyak 35rb pake BCA", atau foto struk kasir):
         Cantumkan setiap item ke array "items": [{"name": "Beras 5kg", "price": 70000, "qty": 1}, {"name": "Telur 1kg", "price": 25000, "qty": 1}, ...].
+      - ATURAN PEMILIHAN DOMPET UNTUK PENGELUARAN (SANGAT PENTING):
+        1) Jika pengguna secara eksplisit menyebutkan nama dompet (misal: "beli bensin 20rb pakai BCA", "makan siang 30rb dompet kas tunai"):
+           Gunakan dompet tersebut (cocokkan id dompet dari "Daftar Dompet & Saldo").
+        2) Jika pengguna TIDAK menyebutkan dompet:
+           - Cek apakah ada dompet di "Daftar Dompet & Saldo" yang memiliki "isDefaultExpense": true.
+           - Jika ADA dompet dengan "isDefaultExpense": true:
+             Gunakan dompet default tersebut secara otomatis! Cantumkan di summaryMessage: "• Dompet: [Nama Dompet] (Default)".
+           - Jika TIDAK ADA dompet dengan "isDefaultExpense": true (belum pernah di-set):
+             * Jika dompet keluarga hanya ada 1 dompet: langsung gunakan 1 dompet tersebut.
+             * Jika dompet keluarga ada LEBIH DARI 1 (misal ada BCA, Kas Tunai, Rekening Bersama, dll):
+               JANGAN menebak dompet secara sembarangan! Kembalikan intent: "FINANCIAL_CONSULTATION" untuk menanyakan kepada pengguna dompet mana yang ingin digunakan, dengan sapaan khas Monee:
+               "Halo Kak! 🎀 Monee siap bantu catatkan pengeluaran *[Deskripsi]* sebesar *Rp [Nominal]*, tapi Kakak belum menentukan mau dipotong dari dompet yang mana nih.\n\nPilihan dompet Kakak saat ini:\n• [Nama Dompet 1] (Saldo: Rp ...)\n• [Nama Dompet 2] (Saldo: Rp ...)\n\nMau dipotong dari dompet yang mana ya Kak?\n💡 *Tips Monee:* Kakak juga bisa ketik misalnya *'Jadikan Kas Tunai dompet default'* agar pengeluaran berikutnya langsung otomatis terpotong tanpa perlu ditanya lagi! 🥰"
    b. "UPDATE_TRANSACTION" (Edit Transaksi):
       - Mengubah/mengedit transaksi yang sudah pernah dicatat.
       - Contoh: "ubah pengeluaran bensin kemarin yang 50rb jadi 60rb", "ganti tanggal transaksi beli beras jadi tanggal 12".
@@ -274,6 +287,10 @@ Analisa pesan/media dari pengguna dan tentukan intensi:
       - Membuat pos tabungan dana siaga baru (misal: "bikin sinking fund Qurban target 4 juta alokasi 400rb tiap bulan").
    h. "CREATE_RECURRING_BILL":
       - Menjadwalkan tagihan rutin bulanan (misal: "jadwalkan tagihan wifi 350rb tiap tgl 15 dari Mandiri").
+   i. "SET_DEFAULT_WALLET":
+      - Mengatur dompet default pengeluaran keluarga.
+      - Contoh: "jadikan Kas Tunai dompet default", "set default dompet bca", "atur dompet mandiri jadi default pengeluaran".
+      - Cocokkan nama dompet dari "Daftar Dompet & Saldo" di bawah.
 
 2. "FINANCIAL_CONSULTATION" (Read / Analisis / Konsultasi Waktu):
    - Terpicu saat pengguna BERTANYA, meminta saran, atau bertanya riwayat transaksi ("hari ini apa aja?", "kemarin habis berapa?", "pengeluaran bulan lalu", "pengeluaran tanggal 15", "tahun ini", "apakah saya boros?", "keuangan aku gimana?").
@@ -388,6 +405,15 @@ Jika CREATE_RECURRING_BILL:
   "amount": 350000,
   "dueDayOfMonth": 15,
   "summaryMessage": "• Tagihan: Tagihan Wifi\\n• Nominal: Rp 350.000\\n• Jatuh Tempo: Tanggal 15"
+}
+
+Jika SET_DEFAULT_WALLET:
+{
+  "intent": "TRANSACTION_RECORD",
+  "actionType": "SET_DEFAULT_WALLET",
+  "targetWalletId": "id-dompet-terpilih",
+  "walletName": "Kas Tunai",
+  "summaryMessage": "• Jadikan Dompet Default Pengeluaran: Kas Tunai"
 }
 
 Jika FINANCIAL_CONSULTATION:
@@ -561,7 +587,23 @@ Jika FINANCIAL_CONSULTATION:
         };
       }
 
-      const defaultWalletId = options.contextWallets[0]?.id || '';
+      if (parsed.actionType === 'SET_DEFAULT_WALLET') {
+        const targetW = options.contextWallets.find((w) =>
+          w.id === parsed.targetWalletId ||
+          w.name.toLowerCase() === (parsed.walletName || '').toLowerCase()
+        ) || options.contextWallets[0];
+
+        return {
+          intent: 'TRANSACTION_RECORD',
+          actionType: 'SET_DEFAULT_WALLET',
+          targetWalletId: targetW?.id,
+          walletName: targetW?.name || parsed.walletName,
+          summaryMessage: parsed.summaryMessage || `• Jadikan ${targetW?.name || 'Dompet'} sebagai dompet default pengeluaran`,
+        };
+      }
+
+      const defaultExpenseWallet = options.contextWallets.find((w) => w.isDefaultExpense);
+      const defaultWalletId = defaultExpenseWallet?.id || options.contextWallets[0]?.id || '';
       const defaultCategoryId = options.contextCategories[0]?.id;
 
       return {
