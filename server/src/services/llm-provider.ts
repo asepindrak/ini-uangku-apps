@@ -452,7 +452,7 @@ Jika FINANCIAL_CONSULTATION:
       console.error('Error calling Gemini Process:', error);
       return {
         intent: 'FINANCIAL_CONSULTATION',
-        replyText: `Maaf, terjadi kendala saat menganalisa dengan AI: ${error?.message || error}`,
+        replyText: this.sanitizeReply(`Maaf, terjadi kendala saat menganalisa dengan AI: ${error?.message || error}`, options),
       };
     }
   }
@@ -503,9 +503,42 @@ Jika FINANCIAL_CONSULTATION:
       console.error('Error calling OpenAI Compatible API:', error);
       return {
         intent: 'FINANCIAL_CONSULTATION',
-        replyText: `Maaf, terjadi kesalahan pada layanan AI: ${error?.message || error}`,
+        replyText: this.sanitizeReply(`Maaf, terjadi kesalahan pada layanan AI: ${error?.message || error}`, options),
       };
     }
+  }
+
+  /**
+   * Helper pembersih respons agar tidak membocorkan exception internal, CLI, prompt sistem, atau base64
+   */
+  private static sanitizeReply(text: string, options: LLMPayloadOptions): string {
+    if (!text) return 'Ada yang bisa Monee bantu terkait keuangan keluarga Anda hari ini? 🎀';
+
+    const isLeakedOrError =
+      text.includes('[Server Exception') ||
+      text.includes('Exception executing') ||
+      text.includes('Command [') ||
+      text.includes('base64') ||
+      text.includes('data:image') ||
+      text.includes('SYSTEM:') ||
+      text.includes('IDENTITAS & PERSONA') ||
+      text.includes('TUGAS UTAMA:') ||
+      text.includes('--dangerously-skip-permissions') ||
+      text.includes('timed out after') ||
+      text.length > 2000;
+
+    if (isLeakedOrError) {
+      console.error('❌ [LLM Error Shield] Blocked leak to chat:', text.substring(0, 300));
+      if (options.imageBase64) {
+        return 'Mohon maaf Kak, foto struk/nota belanja yang dikirimkan belum dapat dibaca oleh AI saat ini. Boleh tolong fotokan lebih dekat dan terang, atau langsung ketikkan nama barang dan nominalnya ya Kak? Monee siap bantu catatkan! 🎀';
+      }
+      if (options.audioBase64) {
+        return 'Mohon maaf Kak, rekaman suara belum dapat terdengar dengan jelas oleh AI saat ini. Boleh tolong ketikkan nominal dan keperluannya ya Kak? Monee langsung bantu catat! 🎀';
+      }
+      return 'Mohon maaf Kak, Monee mengalami sedikit kendala teknis saat memproses pesan tersebut. Boleh coba ketikkan kembali secara singkat ya Kak? 🎀';
+    }
+
+    return text.replace(/```[a-z]*|```/gi, '').trim();
   }
 
   /**
@@ -524,7 +557,7 @@ Jika FINANCIAL_CONSULTATION:
       if (parsed.intent === 'FINANCIAL_CONSULTATION' || parsed.replyText) {
         return {
           intent: 'FINANCIAL_CONSULTATION',
-          replyText: parsed.replyText || 'Ada yang bisa saya bantu terkait keuangan keluarga Anda hari ini?',
+          replyText: this.sanitizeReply(parsed.replyText, options),
         };
       }
 
@@ -568,7 +601,7 @@ Jika FINANCIAL_CONSULTATION:
     } catch (e) {
       return {
         intent: 'FINANCIAL_CONSULTATION',
-        replyText: rawText.replace(/```[a-z]*|```/gi, '').trim(),
+        replyText: this.sanitizeReply(rawText, options),
       };
     }
   }

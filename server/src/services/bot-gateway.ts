@@ -7,6 +7,7 @@ import makeWASocket, {
   proto,
 } from '@whiskeysockets/baileys';
 import { Bot, InlineKeyboard } from 'grammy';
+import sharp from 'sharp';
 import qrcode from 'qrcode';
 import qrcodeTerminal from 'qrcode-terminal';
 import path from 'path';
@@ -919,10 +920,20 @@ export class BotGateway {
     if (msgType === 'imageMessage') {
       await this.sendWhatsAppMessage(replyJid, '🔍 Sedang membaca foto nota / tulisan tangan Anda dengan AI...');
       try {
-        const buffer = await downloadMediaMessage(msg, 'buffer', {});
-        imageBase64 = buffer.toString('base64');
-      } catch (err) {
-        console.error('Gagal mengunduh gambar WA:', err);
+        const rawBuffer = await downloadMediaMessage(msg, 'buffer', {});
+        // Kompres dan optimasi resolusi struk (maksimal 1024x1024) agar ringan dan cepat diproses AI
+        try {
+          const compressed = await sharp(rawBuffer)
+            .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+            .jpeg({ quality: 75 })
+            .toBuffer();
+          imageBase64 = compressed.toString('base64');
+        } catch (compErr) {
+          console.warn('[WA Gateway] Kompresi sharp gagal, menggunakan buffer asli:', compErr);
+          imageBase64 = rawBuffer.toString('base64');
+        }
+      } catch (err: any) {
+        console.error('Gagal mengunduh gambar WA:', err?.message || err);
       }
     } else if (msgType === 'audioMessage') {
       await this.sendWhatsAppMessage(replyJid, '🎙️ Sedang mendengarkan rekaman suara Anda...');
