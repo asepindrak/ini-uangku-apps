@@ -122,6 +122,41 @@ export class ApprovalEngine {
   }
 
   /**
+   * Proses respon approval langsung berdasarkan ID pending action (misal dari aplikasi UI)
+   */
+  static async respondToPendingActionById(
+    pendingId: string,
+    approved: boolean
+  ): Promise<{ status: 'APPROVED' | 'REJECTED'; message: string; alert?: string }> {
+    const pending = await prisma.pendingAction.findUnique({
+      where: { id: pendingId },
+      include: { user: true, family: true },
+    });
+
+    if (!pending || pending.status !== ActionStatus.PENDING_APPROVAL) {
+      throw new Error('Aksi persetujuan tidak ditemukan atau sudah kadaluarsa.');
+    }
+
+    if (approved) {
+      const result = await this.executeAction(pending);
+      return {
+        status: 'APPROVED',
+        message: result.message,
+        alert: result.alert,
+      };
+    } else {
+      await prisma.pendingAction.update({
+        where: { id: pending.id },
+        data: { status: ActionStatus.REJECTED },
+      });
+      return {
+        status: 'REJECTED',
+        message: '❌ Transaksi berhasil dibatalkan dan tidak dicatat ke jurnal. 🎀',
+      };
+    }
+  }
+
+  /**
    * Eksekusi mutasi ke database setelah disetujui user
    */
   private static async executeAction(pending: any): Promise<{ message: string; alert?: string }> {

@@ -8,6 +8,9 @@
   import NetWorthCard from './lib/components/NetWorthCard.svelte';
   import SinkingFundsList from './lib/components/SinkingFundsList.svelte';
   import RecentTransactions from './lib/components/RecentTransactions.svelte';
+  import AnalyticsDashboard from './lib/components/AnalyticsDashboard.svelte';
+  import TransactionExplorer from './lib/components/TransactionExplorer.svelte';
+  import FinancialReportsView from './lib/components/FinancialReportsView.svelte';
   import PendingApprovalsModal from './lib/components/PendingApprovalsModal.svelte';
   import InviteFamilyModal from './lib/components/InviteFamilyModal.svelte';
   import BotStatusModal from './lib/components/BotStatusModal.svelte';
@@ -15,6 +18,8 @@
   import EditProfileModal from './lib/components/EditProfileModal.svelte';
   import UpdateModal from './lib/components/UpdateModal.svelte';
   import AuthModal from './lib/components/AuthModal.svelte';
+
+  let activeView: 'overview' | 'analytics' | 'transactions' | 'reports' = 'overview';
 
   let wallets: Wallet[] = [];
   let transactions: Transaction[] = [];
@@ -95,6 +100,8 @@
   <div class="min-h-screen flex flex-col pb-16">
     <Navbar
       pendingCount={pendingActions.length}
+      {activeView}
+      onViewChange={(v) => (activeView = v)}
       onOpenInvite={() => (isInviteOpen = true)}
       onOpenBotStatus={() => (isBotStatusOpen = true)}
       onOpenPending={() => (isPendingOpen = true)}
@@ -103,30 +110,53 @@
     />
 
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 w-full space-y-8 flex-1">
-      <!-- 1. Net Worth Card -->
-      <NetWorthCard
-        totalCash={netWorthData.totalCash}
-        totalAsset={netWorthData.totalAsset}
-        totalDebt={netWorthData.totalDebt}
-        netWorth={netWorthData.netWorth}
-      />
+      {#if activeView === 'overview'}
+        <!-- 1. Net Worth Card -->
+        <NetWorthCard
+          totalCash={netWorthData.totalCash}
+          totalAsset={netWorthData.totalAsset}
+          totalDebt={netWorthData.totalDebt}
+          netWorth={netWorthData.netWorth}
+        />
 
-      <!-- 2. Multi-Wallet Carousel -->
-      <WalletCarousel
-        {wallets}
-        onAddWallet={handleAddWallet}
-      />
+        <!-- 2. Multi-Wallet Carousel -->
+        <WalletCarousel
+          {wallets}
+          onAddWallet={handleAddWallet}
+        />
 
-      <!-- 3. Sinking Funds List -->
-      <SinkingFundsList
-        funds={sinkingFunds}
-        onAddFund={handleAddSinkingFund}
-      />
+        <!-- 3. Sinking Funds List -->
+        <SinkingFundsList
+          funds={sinkingFunds}
+          onAddFund={handleAddSinkingFund}
+        />
 
-      <!-- 4. Recent Transactions -->
-      <RecentTransactions
-        {transactions}
-      />
+        <!-- 4. Quick Recent Transactions Preview -->
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-brand-indigo">Transaksi Terakhir</h3>
+            <button
+              on:click={() => (activeView = 'transactions')}
+              class="text-xs font-bold text-brand-indigo-light hover:text-brand-indigo underline"
+            >
+              Buka Filterisasi & Semua Transaksi →
+            </button>
+          </div>
+          <RecentTransactions {transactions} />
+        </div>
+      {:else if activeView === 'analytics'}
+        <!-- Analytics Dashboard with Visual Charts & Trends -->
+        <AnalyticsDashboard {wallets} />
+      {:else if activeView === 'transactions'}
+        <!-- Full Filtered Transaction Explorer -->
+        <TransactionExplorer
+          {wallets}
+          onTransactionChanged={loadDashboardData}
+        />
+      {:else if activeView === 'reports'}
+        <!-- Financial Cash Flow, Budget & Sinking Fund Reports -->
+        <FinancialReportsView />
+      {/if}
     </main>
 
     <!-- Modals -->

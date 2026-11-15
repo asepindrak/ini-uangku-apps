@@ -65,7 +65,10 @@ export const api = {
   // Transactions
   getTransactions: (params: string = '') => request<any[]>(`/api/transactions${params}`),
   getSummary: () => request<any>('/api/transactions/summary'),
+  getAnalytics: (params: string = '') => request<any>(`/api/transactions/analytics${params ? '?' + params : ''}`),
+  getFinancialReport: (params: string = '') => request<any>(`/api/transactions/report${params ? '?' + params : ''}`),
   createTransaction: (data: any) => request<any>('/api/transactions', { method: 'POST', body: JSON.stringify(data) }),
+  deleteTransaction: (id: string) => request<any>(`/api/transactions/${id}`, { method: 'DELETE' }),
   getPendingActions: () => request<any[]>('/api/transactions/pending'),
   respondPendingAction: (id: string, approved: boolean) =>
     request<any>(`/api/transactions/pending/${id}/respond`, { method: 'POST', body: JSON.stringify({ approved }) }),
