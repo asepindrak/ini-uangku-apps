@@ -1,5 +1,5 @@
 import { prisma } from '../db.js';
-import { ActionType, ActionStatus, TransactionType, InputSource } from '@prisma/client';
+import { ActionType, ActionStatus, TransactionType, InputSource, WalletType } from '@prisma/client';
 
 export interface ProposedTransactionPayload {
   walletId: string;
@@ -407,24 +407,89 @@ export class ApprovalEngine {
         `• *Nominal*: Rp ${txAmount.toLocaleString('id-ID')}\n` +
         `• *Dompet*: ${walletRestored?.name} (Saldo Sekarang: Rp ${Number(walletRestored?.balance || 0).toLocaleString('id-ID')})`;
     } else if (pending.actionType === ActionType.CREATE_WALLET) {
-      const { name, type = 'BANK', initialBalance = 0 } = payload;
-      const newWallet = await prisma.wallet.create({
-        data: {
-          familyId: pending.familyId,
-          userId: pending.userId,
-          name: name.trim(),
-          type: type || 'BANK',
-          balance: Number(initialBalance) || 0,
-          isShared: true,
-        },
-      });
+      const walletsToAdd: Array<{ name: string; type?: WalletType; initialBalance?: number }> = [];
+      if (Array.isArray(payload.wallets) && payload.wallets.length > 0) {
+        walletsToAdd.push(...payload.wallets);
+      } else if (payload.name) {
+        walletsToAdd.push({
+          name: payload.name,
+          type: payload.type || 'BANK',
+          initialBalance: payload.initialBalance || 0,
+        });
+      }
 
-      successMessage =
-        `🎉 *Dompet Baru Berhasil Dibuat!*\n` +
-        `Monee sudah daftarkan dompet baru keluarga Kakak:\n` +
-        `• *Nama Dompet*: ${newWallet.name}\n` +
-        `• *Tipe*: ${newWallet.type}\n` +
-        `• *Saldo Awal*: Rp ${Number(newWallet.balance).toLocaleString('id-ID')}`;
+      const createdWallets: any[] = [];
+      for (const w of walletsToAdd) {
+        if (!w.name || !w.name.trim()) continue;
+        const trimmed = w.name.trim();
+        const typeStr = (w.type as WalletType) || (trimmed.toLowerCase().startsWith('kas') ? WalletType.CASH : WalletType.BANK);
+        const newWallet = await prisma.wallet.create({
+          data: {
+            familyId: pending.familyId,
+            userId: pending.userId,
+            name: trimmed,
+            type: typeStr,
+            balance: Number(w.initialBalance) || 0,
+            isShared: true,
+          },
+        });
+        createdWallets.push(newWallet);
+      }
+
+      // Juga dukung pembuatan kategori jika disertakan dalam batch
+      const categoriesToAdd: Array<{ name: string; type?: TransactionType; monthlyBudget?: number }> = [];
+      if (Array.isArray(payload.categories) && payload.categories.length > 0) {
+        categoriesToAdd.push(...payload.categories);
+      }
+
+      const createdCategories: any[] = [];
+      for (const c of categoriesToAdd) {
+        if (!c.name || !c.name.trim()) continue;
+        const trimmed = c.name.trim();
+        const existing = await prisma.category.findFirst({
+          where: { familyId: pending.familyId, name: { equals: trimmed, mode: 'insensitive' } },
+        });
+        if (!existing) {
+          const newCat = await prisma.category.create({
+            data: {
+              familyId: pending.familyId,
+              name: trimmed,
+              type: c.type === 'INCOME' ? TransactionType.INCOME : TransactionType.EXPENSE,
+              monthlyBudget: c.monthlyBudget ? Number(c.monthlyBudget) : null,
+              icon: 'tag',
+              color: '#FFC1B6',
+            },
+          });
+          createdCategories.push(newCat);
+        } else {
+          createdCategories.push(existing);
+        }
+      }
+
+      if (createdWallets.length > 1 || createdCategories.length > 0) {
+        successMessage = `🎉 *Berhasil Menambahkan Pos Keuangan Baru!*\n`;
+        if (createdWallets.length > 0) {
+          successMessage += `\n💳 *${createdWallets.length} Dompet Baru Berhasil Didaftarkan:*\n`;
+          createdWallets.forEach((w, i) => {
+            successMessage += `${i + 1}. *${w.name}* (${w.type} - Saldo: Rp ${Number(w.balance).toLocaleString('id-ID')})\n`;
+          });
+        }
+        if (createdCategories.length > 0) {
+          successMessage += `\n🏷️ *${createdCategories.length} Kategori Berhasil Ditambahkan:*\n`;
+          createdCategories.forEach((c, i) => {
+            successMessage += `${i + 1}. *${c.name}* (${c.type === 'INCOME' ? 'Pemasukan' : 'Pengeluaran'}${c.monthlyBudget ? ` - Plafon: Rp ${Number(c.monthlyBudget).toLocaleString('id-ID')}` : ''})\n`;
+          });
+        }
+        successMessage += `\nMonee siap bantu pantau alokasi keuangan keluarga ya Kak! 🥰`;
+      } else {
+        const singleW = createdWallets[0];
+        successMessage =
+          `🎉 *Dompet Baru Berhasil Dibuat!*\n` +
+          `Monee sudah daftarkan dompet baru keluarga Kakak:\n` +
+          `• *Nama Dompet*: ${singleW?.name}\n` +
+          `• *Tipe*: ${singleW?.type}\n` +
+          `• *Saldo Awal*: Rp ${Number(singleW?.balance || 0).toLocaleString('id-ID')}`;
+      }
     } else if (pending.actionType === ActionType.UPDATE_WALLET) {
       const { walletId, newName, newType } = payload;
       const target = await prisma.wallet.findFirst({
@@ -494,36 +559,105 @@ export class ApprovalEngine {
         `• *Ke Dompet*: ${updatedTgt?.name} (Saldo: Rp ${Number(updatedTgt?.balance).toLocaleString('id-ID')})\n` +
         `• *Nominal*: Rp ${numAmount.toLocaleString('id-ID')}`;
     } else if (pending.actionType === ActionType.SET_BUDGET) {
-      const { categoryId, categoryName, monthlyBudget, alertThreshold = 80 } = payload;
-      let cat;
-      if (categoryId) {
-        cat = await prisma.category.update({
-          where: { id: categoryId },
-          data: {
-            monthlyBudget: Number(monthlyBudget),
-            alertThreshold: Number(alertThreshold) || 80,
-          },
-        });
-      } else if (categoryName) {
-        cat = await prisma.category.create({
-          data: {
-            familyId: pending.familyId,
-            name: categoryName.trim(),
-            icon: 'tag',
-            color: '#C1ECFD',
-            type: TransactionType.EXPENSE,
-            monthlyBudget: Number(monthlyBudget),
-            alertThreshold: Number(alertThreshold) || 80,
-          },
+      const categoriesToAdd: Array<{ name?: string; type?: TransactionType; monthlyBudget?: number; categoryId?: string }> = [];
+      if (Array.isArray(payload.categories) && payload.categories.length > 0) {
+        categoriesToAdd.push(...payload.categories);
+      } else if (payload.categoryId || payload.categoryName) {
+        categoriesToAdd.push({
+          categoryId: payload.categoryId,
+          name: payload.categoryName,
+          monthlyBudget: payload.monthlyBudget,
         });
       }
 
-      successMessage =
-        `🎯 *Batas Anggaran (Budget) Berhasil Diatur!*\n` +
-        `Monee siap bantu pantau kuota anggaran ini ya Kak:\n` +
-        `• *Kategori*: ${cat?.name}\n` +
-        `• *Batas Bulanan*: Rp ${Number(cat?.monthlyBudget).toLocaleString('id-ID')}\n` +
-        `• *Peringatan Otomatis*: Saat mencapai ${cat?.alertThreshold || 80}% kuota`;
+      const processedCats: any[] = [];
+      for (const c of categoriesToAdd) {
+        if (c.categoryId) {
+          const updated = await prisma.category.update({
+            where: { id: c.categoryId },
+            data: {
+              monthlyBudget: Number(c.monthlyBudget) || 0,
+              alertThreshold: Number(payload.alertThreshold) || 80,
+            },
+          });
+          processedCats.push(updated);
+        } else if (c.name && c.name.trim()) {
+          const trimmed = c.name.trim();
+          const existing = await prisma.category.findFirst({
+            where: { familyId: pending.familyId, name: { equals: trimmed, mode: 'insensitive' } },
+          });
+          if (existing) {
+            const updated = await prisma.category.update({
+              where: { id: existing.id },
+              data: {
+                monthlyBudget: c.monthlyBudget !== undefined && c.monthlyBudget !== null ? Number(c.monthlyBudget) : existing.monthlyBudget,
+              },
+            });
+            processedCats.push(updated);
+          } else {
+            const created = await prisma.category.create({
+              data: {
+                familyId: pending.familyId,
+                name: trimmed,
+                icon: 'tag',
+                color: '#C1ECFD',
+                type: c.type === 'INCOME' ? TransactionType.INCOME : TransactionType.EXPENSE,
+                monthlyBudget: c.monthlyBudget ? Number(c.monthlyBudget) : null,
+                alertThreshold: Number(payload.alertThreshold) || 80,
+              },
+            });
+            processedCats.push(created);
+          }
+        }
+      }
+
+      // Juga dukung pembuatan dompet jika ada dalam batch
+      const walletsToAdd: Array<{ name: string; type?: WalletType; initialBalance?: number }> = [];
+      if (Array.isArray(payload.wallets) && payload.wallets.length > 0) {
+        walletsToAdd.push(...payload.wallets);
+      }
+      const createdWallets: any[] = [];
+      for (const w of walletsToAdd) {
+        if (!w.name || !w.name.trim()) continue;
+        const trimmed = w.name.trim();
+        const typeStr = (w.type as WalletType) || (trimmed.toLowerCase().startsWith('kas') ? WalletType.CASH : WalletType.BANK);
+        const newWallet = await prisma.wallet.create({
+          data: {
+            familyId: pending.familyId,
+            userId: pending.userId,
+            name: trimmed,
+            type: typeStr,
+            balance: Number(w.initialBalance) || 0,
+            isShared: true,
+          },
+        });
+        createdWallets.push(newWallet);
+      }
+
+      if (processedCats.length > 1 || createdWallets.length > 0) {
+        successMessage = `🎉 *Berhasil Menambahkan Pos Keuangan Baru!*\n`;
+        if (processedCats.length > 0) {
+          successMessage += `\n🏷️ *${processedCats.length} Kategori Berhasil Didaftarkan:*\n`;
+          processedCats.forEach((c, i) => {
+            successMessage += `${i + 1}. *${c.name}* (${c.type === 'INCOME' ? 'Pemasukan' : 'Pengeluaran'}${c.monthlyBudget ? ` - Plafon: Rp ${Number(c.monthlyBudget).toLocaleString('id-ID')}` : ''})\n`;
+          });
+        }
+        if (createdWallets.length > 0) {
+          successMessage += `\n💳 *${createdWallets.length} Dompet Baru Berhasil Didaftarkan:*\n`;
+          createdWallets.forEach((w, i) => {
+            successMessage += `${i + 1}. *${w.name}* (${w.type} - Saldo: Rp ${Number(w.balance).toLocaleString('id-ID')})\n`;
+          });
+        }
+        successMessage += `\nMonee siap bantu pantau alokasi keuangan keluarga ya Kak! 🥰`;
+      } else {
+        const cat = processedCats[0];
+        successMessage =
+          `🎯 *Batas Anggaran (Budget) Berhasil Diatur!*\n` +
+          `Monee siap bantu pantau kuota anggaran ini ya Kak:\n` +
+          `• *Kategori*: ${cat?.name}\n` +
+          `• *Batas Bulanan*: Rp ${Number(cat?.monthlyBudget || 0).toLocaleString('id-ID')}\n` +
+          `• *Peringatan Otomatis*: Saat mencapai ${cat?.alertThreshold || 80}% kuota`;
+      }
     } else if (pending.actionType === ActionType.CREATE_SINKING_FUND) {
       const { name, targetAmount, monthlyAlloc = 0, sourceWalletId } = payload;
       const defaultWallet = await prisma.wallet.findFirst({ where: { familyId: pending.familyId } });

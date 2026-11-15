@@ -100,6 +100,19 @@ export interface ProcessedMessageResult {
   newWalletName?: string;
   newWalletType?: 'BANK' | 'E_WALLET' | 'CASH' | 'INVESTMENT';
 
+  // BATCH CREATION (MULTIPLE WALLETS / CATEGORIES):
+  wallets?: Array<{
+    name: string;
+    type?: 'BANK' | 'E_WALLET' | 'CASH' | 'INVESTMENT';
+    initialBalance?: number;
+  }>;
+  categories?: Array<{
+    name: string;
+    type?: 'EXPENSE' | 'INCOME';
+    monthlyBudget?: number;
+    alertThreshold?: number;
+  }>;
+
   // TRANSFER_WALLET:
   sourceWalletId?: string;
   targetWalletId?: string;
@@ -281,11 +294,23 @@ Analisa pesan/media dari pengguna dan tentukan intensi:
       - Contoh: "hapus transaksi bensin kemarin", "batalkan pengeluaran makan siang tanggal 14".
       - Cocokkan id/deskripsi transaksi dari daftar "Transaksi Terkini Keluarga" di bawah.
    d. "CREATE_WALLET":
-      - Perintah membuat dompet baru (misal: "bikin dompet Bank Jago saldo awal 500rb").
+      - Perintah membuat dompet baru, BAIK 1 DOMPET MAUPUN BANYAK SEKALIGUS (Batch Create Wallets).
+      - Contoh 1 dompet: "bikin dompet Bank Jago saldo awal 500rb".
+      - Contoh banyak dompet sekaligus: "tambahkan dompet baru ini: 1. Kas Pajak Mobil, 2. Kas Pajak Beat, 3. Kas Bekel..."
+      - SANGAT PENTING: Jika pengguna memberikan daftar banyak dompet sekaligus:
+        * JANGAN menolak atau meminta pengguna melakukannya satu per satu! Monee BISA menambahkan semuanya sekaligus!
+        * Isi array "wallets": [ { "name": "Kas Pajak Mobil", "type": "CASH", "initialBalance": 0 }, ... ]. Tentukan tipenya ("CASH" jika ada kata kas/tunai/bekel/ubi/renov/kurban/pajak/dapur, "BANK" jika bank/bca/mandiri, atau default "CASH").
+        * Jika dalam pesan yang sama pengguna JUGA menyertakan daftar kategori pengeluaran/pemasukan baru, isi juga array "categories": [ { "name": "Makan", "type": "EXPENSE" }, { "name": "Listrik", "type": "EXPENSE" }, ... ]!
    e. "TRANSFER_WALLET":
       - Perintah memindahkan dana / transfer antar dompet (misal: "transfer dari BCA ke Gopay 200rb").
    f. "SET_BUDGET":
-      - Mengatur batas anggaran bulanan kategori (misal: "atur budget makan 2 juta sebulan").
+      - Mengatur batas anggaran bulanan kategori atau membuat kategori baru, BAIK 1 KATEGORI MAUPUN BANYAK SEKALIGUS (Batch Create Categories).
+      - Contoh 1 kategori: "atur budget makan 2 juta sebulan", "buat kategori skincare 500rb".
+      - Contoh banyak kategori sekaligus: "tambahkan kategori pengeluaran ini: 1. Makan, 2. Listrik, 3. Air, 4. Bensin, 5. BPJS...".
+      - SANGAT PENTING: Jika pengguna memberikan daftar banyak kategori sekaligus:
+        * JANGAN menolak atau meminta pengguna memasukkannya satu per satu! Monee BISA menambahkan semuanya sekaligus!
+        * Isi array "categories": [ { "name": "Makan", "type": "EXPENSE" }, { "name": "Listrik", "type": "EXPENSE" }, ... ].
+        * Jika dalam pesan yang sama pengguna JUGA menyertakan daftar dompet baru, isi juga array "wallets" nya!
    g. "CREATE_SINKING_FUND":
       - Membuat pos tabungan dana siaga baru (misal: "bikin sinking fund Qurban target 4 juta alokasi 400rb tiap bulan").
    h. "CREATE_RECURRING_BILL":
@@ -363,14 +388,22 @@ Jika DELETE_TRANSACTION:
   "summaryMessage": "• Hapus Transaksi: Bensin (Kemarin)\\n• Saldo dompet akan dipulihkan"
 }
 
-Jika CREATE_WALLET:
+Jika CREATE_WALLET (Bisa Tunggal atau Banyak Sekaligus):
 {
   "intent": "TRANSACTION_RECORD",
   "actionType": "CREATE_WALLET",
-  "walletName": "Bank Jago",
-  "walletType": "BANK",
-  "initialBalance": 500000,
-  "summaryMessage": "• Nama Dompet: Bank Jago\\n• Saldo Awal: Rp 500.000"
+  "walletName": "Kas Pajak Mobil",
+  "walletType": "CASH",
+  "initialBalance": 0,
+  "wallets": [
+    { "name": "Kas Pajak Mobil", "type": "CASH", "initialBalance": 0 },
+    { "name": "Kas Pajak Beat", "type": "CASH", "initialBalance": 0 }
+  ],
+  "categories": [
+    { "name": "Makan", "type": "EXPENSE" },
+    { "name": "Listrik", "type": "EXPENSE" }
+  ],
+  "summaryMessage": "• 11 Dompet Baru: Kas Pajak Mobil, Kas Pajak Beat, dll\\n• 26 Kategori Pengeluaran: Makan, Listrik, dll"
 }
 
 Jika TRANSFER_WALLET:
@@ -673,6 +706,8 @@ Jika FINANCIAL_CONSULTATION:
         monthlyAlloc: Number(parsed.monthlyAlloc) || 0,
         billName: parsed.billName,
         dueDayOfMonth: Number(parsed.dueDayOfMonth) || 1,
+        wallets: Array.isArray(parsed.wallets) ? parsed.wallets : undefined,
+        categories: Array.isArray(parsed.categories) ? parsed.categories : undefined,
       };
     } catch (e) {
       return {

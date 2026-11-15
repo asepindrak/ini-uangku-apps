@@ -688,12 +688,33 @@ export class TelegramManager {
     }
 
     if (processed.actionType === 'CREATE_WALLET') {
-      const summaryText =
-        `📋 *Draf Pembuatan Dompet Baru:*\n` +
-        `• *Nama Dompet*: ${processed.walletName}\n` +
-        `• *Tipe*: ${processed.walletType || 'BANK'}\n` +
-        `• *Saldo Awal*: Rp ${(processed.initialBalance || 0).toLocaleString('id-ID')}\n\n` +
-        `👉 *Ketuk tombol di bawah atau balas "Ya" untuk menyetujui:*`;
+      const hasBatchWallets = Array.isArray(processed.wallets) && processed.wallets.length > 0;
+      const hasBatchCategories = Array.isArray(processed.categories) && processed.categories.length > 0;
+
+      let summaryText = '';
+      if (hasBatchWallets || hasBatchCategories) {
+        summaryText = `📋 *Draf Penambahan Pos Keuangan:*\n`;
+        if (hasBatchWallets) {
+          summaryText += `\n💳 *Dompet Baru (${processed.wallets!.length}):*\n`;
+          processed.wallets!.forEach((w, i) => {
+            summaryText += `${i + 1}. ${w.name} (${w.type || 'CASH'} - Saldo: Rp ${(w.initialBalance || 0).toLocaleString('id-ID')})\n`;
+          });
+        }
+        if (hasBatchCategories) {
+          summaryText += `\n🏷️ *Kategori Pengeluaran/Pemasukan (${processed.categories!.length}):*\n`;
+          processed.categories!.forEach((c, i) => {
+            summaryText += `${i + 1}. ${c.name}${c.monthlyBudget ? ` (Budget: Rp ${c.monthlyBudget.toLocaleString('id-ID')})` : ''}\n`;
+          });
+        }
+        summaryText += `\n👉 *Ketuk tombol di bawah atau balas "Ya" untuk menyetujui sekaligus:* `;
+      } else {
+        summaryText =
+          `📋 *Draf Pembuatan Dompet Baru:*\n` +
+          `• *Nama Dompet*: ${processed.walletName}\n` +
+          `• *Tipe*: ${processed.walletType || 'BANK'}\n` +
+          `• *Saldo Awal*: Rp ${(processed.initialBalance || 0).toLocaleString('id-ID')}\n\n` +
+          `👉 *Ketuk tombol di bawah atau balas "Ya" untuk menyetujui:*`;
+      }
 
       await sendDraftWithButtons(
         ActionType.CREATE_WALLET,
@@ -701,6 +722,8 @@ export class TelegramManager {
           name: processed.walletName,
           type: processed.walletType || 'BANK',
           initialBalance: processed.initialBalance || 0,
+          wallets: processed.wallets,
+          categories: processed.categories,
         },
         summaryText
       );
@@ -755,24 +778,47 @@ export class TelegramManager {
     }
 
     if (processed.actionType === 'SET_BUDGET') {
-      const targetCat = categories.find((c) => c.id === processed.categoryId || c.name.toLowerCase() === (processed.categoryName || '').toLowerCase());
-      const catName = targetCat?.name || processed.categoryName || 'Kategori';
-      const monthlyBudget = processed.monthlyBudget || 0;
+      const hasBatchCategories = Array.isArray(processed.categories) && processed.categories.length > 0;
+      const hasBatchWallets = Array.isArray(processed.wallets) && processed.wallets.length > 0;
 
-      const summaryText =
-        `📋 *Draf Pengaturan Anggaran (Budget):*\n` +
-        `• *Kategori*: ${catName}\n` +
-        `• *Batas Anggaran Bulanan*: Rp ${monthlyBudget.toLocaleString('id-ID')}\n` +
-        `• *Peringatan Guardrail*: 80% kuota\n\n` +
-        `👉 *Ketuk tombol di bawah atau balas "Ya" untuk menyetujui anggaran ini:*`;
+      let summaryText = '';
+      if (hasBatchCategories || hasBatchWallets) {
+        summaryText = `📋 *Draf Penambahan Pos Keuangan:*\n`;
+        if (hasBatchCategories) {
+          summaryText += `\n🏷️ *Kategori Baru (${processed.categories!.length}):*\n`;
+          processed.categories!.forEach((c, i) => {
+            summaryText += `${i + 1}. ${c.name}${c.monthlyBudget ? ` (Budget: Rp ${c.monthlyBudget.toLocaleString('id-ID')})` : ''}\n`;
+          });
+        }
+        if (hasBatchWallets) {
+          summaryText += `\n💳 *Dompet Baru (${processed.wallets!.length}):*\n`;
+          processed.wallets!.forEach((w, i) => {
+            summaryText += `${i + 1}. ${w.name} (${w.type || 'CASH'} - Saldo: Rp ${(w.initialBalance || 0).toLocaleString('id-ID')})\n`;
+          });
+        }
+        summaryText += `\n👉 *Ketuk tombol di bawah atau balas "Ya" untuk menyetujui sekaligus:* `;
+      } else {
+        const targetCat = categories.find((c) => c.id === processed.categoryId || c.name.toLowerCase() === (processed.categoryName || '').toLowerCase());
+        const catName = targetCat?.name || processed.categoryName || 'Kategori';
+        const monthlyBudget = processed.monthlyBudget || 0;
+
+        summaryText =
+          `📋 *Draf Pengaturan Anggaran (Budget):*\n` +
+          `• *Kategori*: ${catName}\n` +
+          `• *Batas Anggaran Bulanan*: Rp ${monthlyBudget.toLocaleString('id-ID')}\n` +
+          `• *Peringatan Guardrail*: 80% kuota\n\n` +
+          `👉 *Ketuk tombol di bawah atau balas "Ya" untuk menyetujui anggaran ini:*`;
+      }
 
       await sendDraftWithButtons(
         ActionType.SET_BUDGET,
         {
-          categoryId: targetCat?.id,
-          categoryName: catName,
-          monthlyBudget,
+          categoryId: processed.categoryId,
+          categoryName: processed.categoryName,
+          monthlyBudget: processed.monthlyBudget,
           alertThreshold: 80,
+          categories: processed.categories,
+          wallets: processed.wallets,
         },
         summaryText
       );
