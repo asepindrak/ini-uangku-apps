@@ -132,7 +132,7 @@ export async function familyRoutes(fastify: FastifyInstance) {
   });
 
   // Update Timezone Keluarga (Bisa diset manual atau otomatis dari browser/device)
-  fastify.patch('/timezone', async (request, reply) => {
+  const updateTimezoneHandler = async (request: any, reply: any) => {
     const { familyId, role } = (request as any).user;
     const { timezone } = request.body as any;
 
@@ -158,7 +158,10 @@ export async function familyRoutes(fastify: FastifyInstance) {
       timezone: updated.timezone,
       message: `Zona waktu keluarga berhasil diperbarui ke ${updated.timezone}`,
     };
-  });
+  };
+
+  fastify.patch('/timezone', updateTimezoneHandler);
+  fastify.put('/timezone', updateTimezoneHandler);
 
   // Get Invite Link & Code
   fastify.get('/invite', async (request) => {

@@ -28,7 +28,9 @@ const fastify = Fastify({
 // Plugins
 await fastify.register(cors, {
   origin: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
+  credentials: true,
 });
 
 await fastify.register(jwt, {

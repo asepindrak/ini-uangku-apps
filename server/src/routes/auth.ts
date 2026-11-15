@@ -156,7 +156,7 @@ export async function authRoutes(fastify: FastifyInstance) {
   });
 
   // Edit Profile User Sendiri (Ganti No HP / WhatsApp, Telegram ID, dan Nama)
-  fastify.patch('/me', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+  const updateProfileHandler = async (request: any, reply: any) => {
     const { userId, familyId } = (request as any).user;
     const { name, countryCode = '+62', whatsappNumber, telegramChatId } = request.body as any;
 
@@ -260,5 +260,8 @@ export async function authRoutes(fastify: FastifyInstance) {
       },
       message: 'Profil dan nomor HP Anda berhasil diperbarui! Bot akan merespons nomor baru Anda.',
     };
-  });
+  };
+
+  fastify.patch('/me', { preHandler: [fastify.authenticate] }, updateProfileHandler);
+  fastify.put('/me', { preHandler: [fastify.authenticate] }, updateProfileHandler);
 }

@@ -46,7 +46,7 @@ export const api = {
   register: (data: any) => request<any>('/api/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   login: (data: any) => request<any>('/api/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   getProfile: () => request<any>('/api/auth/me'),
-  updateMyProfile: (data: any) => request<any>('/api/auth/me', { method: 'PATCH', body: JSON.stringify(data) }),
+  updateMyProfile: (data: any) => request<any>('/api/auth/me', { method: 'PUT', body: JSON.stringify(data) }),
 
   // Family
   getMembers: () => request<any[]>('/api/family/members'),
@@ -54,7 +54,7 @@ export const api = {
   deleteMember: (id: string) => request<any>(`/api/family/members/${id}`, { method: 'DELETE' }),
   getInvite: () => request<{ inviteCode: string; inviteUrl: string; familyName: string }>('/api/family/invite'),
   getFamilyProfile: () => request<any>('/api/family/profile'),
-  updateFamilyTimezone: (timezone: string) => request<any>('/api/family/timezone', { method: 'PATCH', body: JSON.stringify({ timezone }) }),
+  updateFamilyTimezone: (timezone: string) => request<any>('/api/family/timezone', { method: 'PUT', body: JSON.stringify({ timezone }) }),
 
   // Wallets
   getWallets: () => request<any[]>('/api/wallets'),
