@@ -10,16 +10,15 @@
     Bot,
     Bell,
     LogOut,
-    UserPlus,
     Users,
     User,
     Settings,
-    ShieldCheck,
     LayoutDashboard,
     BarChart3,
     Receipt,
     FileText,
     Wallet,
+    ChevronDown,
   } from 'lucide-svelte';
   import logoImg from '../../assets/logo.png';
 
@@ -33,6 +32,7 @@
   export let onOpenProfile: () => void;
 
   let logoError = false;
+  let isProfileMenuOpen = false;
 
   function togglePrivacy() {
     privacyMode.update((v) => !v);
@@ -52,12 +52,15 @@
   }
 </script>
 
-<header class="sticky top-0 z-40 w-full backdrop-blur-xl bg-white/70 border-b border-white/60 shadow-glass-sm transition-all">
+<header class="sticky top-0 z-40 w-full backdrop-blur-xl bg-white/80 border-b border-white/60 shadow-glass-sm transition-all">
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-    <div class="h-18 flex items-center justify-between gap-3">
-      <!-- Brand Logo & Title -->
-      <div class="flex items-center gap-3 cursor-pointer" on:click={() => onViewChange('overview')}>
-        <div class="relative w-11 h-11 rounded-2xl overflow-hidden shadow-sm bg-gradient-to-tr from-brand-sky via-brand-peach to-brand-butter p-0.5 flex items-center justify-center">
+    <div class="h-16 flex items-center justify-between gap-3">
+      <!-- Brand Logo & Title (Always 1 Line) -->
+      <div
+        class="flex items-center gap-2.5 shrink-0 cursor-pointer select-none"
+        on:click={() => onViewChange('overview')}
+      >
+        <div class="relative w-10 h-10 rounded-2xl overflow-hidden shadow-xs bg-gradient-to-tr from-brand-sky via-brand-peach to-brand-butter p-0.5 flex items-center justify-center shrink-0">
           {#if logoError}
             <div class="w-full h-full rounded-[14px] bg-white flex items-center justify-center text-brand-indigo shadow-inner">
               <Wallet class="w-5 h-5 text-brand-indigo" />
@@ -71,80 +74,78 @@
             />
           {/if}
         </div>
-        <div>
-          <div class="flex items-center gap-2">
-            <h1 class="text-lg font-extrabold text-brand-indigo tracking-tight font-sans">Ini Uangku</h1>
-            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-brand-sky text-brand-indigo-dark shadow-xs">
-              Monee AI
-            </span>
-          </div>
+
+        <div class="flex items-center gap-2 whitespace-nowrap">
+          <span class="text-base sm:text-lg font-black text-brand-indigo tracking-tight font-sans">Ini Uangku</span>
           {#if $auth.family}
-            <p class="text-xs text-brand-indigo/60 font-medium truncate max-w-[140px] sm:max-w-xs">
+            <span class="text-xs text-brand-indigo/30 font-bold hidden sm:inline">•</span>
+            <span class="text-xs font-bold text-brand-indigo/60 hidden sm:inline max-w-[130px] truncate" title={$auth.family.name}>
               {$auth.family.name}
-            </p>
+            </span>
           {/if}
+          <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-brand-sky text-brand-indigo shadow-xs hidden xl:inline">
+            Monee AI
+          </span>
         </div>
       </div>
 
       <!-- Navigation Tabs (Desktop & Tablet) -->
-      <nav class="hidden md:flex items-center gap-1 p-1 rounded-2xl bg-white/80 border border-white/90 shadow-xs">
+      <nav class="hidden md:flex items-center gap-1 p-1 rounded-2xl bg-white/80 border border-white/90 shadow-xs shrink-0">
         <button
           on:click={() => onViewChange('overview')}
-          class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition {activeView === 'overview'
+          class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap {activeView === 'overview'
             ? 'bg-brand-indigo text-white shadow-xs'
             : 'text-brand-indigo/70 hover:text-brand-indigo hover:bg-white/60'}"
         >
-          <LayoutDashboard class="w-3.5 h-3.5" />
-          Ringkasan
+          <LayoutDashboard class="w-3.5 h-3.5 shrink-0" />
+          <span>Ringkasan</span>
         </button>
 
         <button
           on:click={() => onViewChange('analytics')}
-          class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition {activeView === 'analytics'
+          class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap {activeView === 'analytics'
             ? 'bg-brand-indigo text-white shadow-xs'
             : 'text-brand-indigo/70 hover:text-brand-indigo hover:bg-white/60'}"
         >
-          <BarChart3 class="w-3.5 h-3.5" />
-          Analitik
+          <BarChart3 class="w-3.5 h-3.5 shrink-0" />
+          <span>Analitik</span>
         </button>
 
         <button
           on:click={() => onViewChange('transactions')}
-          class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition {activeView === 'transactions'
+          class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap {activeView === 'transactions'
             ? 'bg-brand-indigo text-white shadow-xs'
             : 'text-brand-indigo/70 hover:text-brand-indigo hover:bg-white/60'}"
         >
-          <Receipt class="w-3.5 h-3.5" />
-          Transaksi & Filter
+          <Receipt class="w-3.5 h-3.5 shrink-0" />
+          <span>Transaksi</span>
         </button>
 
         <button
           on:click={() => onViewChange('reports')}
-          class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition {activeView === 'reports'
+          class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap {activeView === 'reports'
             ? 'bg-brand-indigo text-white shadow-xs'
             : 'text-brand-indigo/70 hover:text-brand-indigo hover:bg-white/60'}"
         >
-          <FileText class="w-3.5 h-3.5" />
-          Laporan
+          <FileText class="w-3.5 h-3.5 shrink-0" />
+          <span>Laporan</span>
         </button>
       </nav>
 
       <!-- Center/Right Action Buttons -->
-      <div class="flex items-center gap-2 sm:gap-2.5">
+      <div class="flex items-center gap-2 shrink-0">
         <!-- Privacy Mode Toggle (Eye Icon) -->
         <button
           on:click={togglePrivacy}
-          class="inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-semibold transition shadow-xs border {$privacyMode
-            ? 'bg-brand-peach/80 text-brand-indigo border-brand-peach'
+          class="p-2.5 rounded-2xl text-xs font-semibold transition shadow-xs border {$privacyMode
+            ? 'bg-brand-peach text-brand-indigo border-brand-peach-dark shadow-inner'
             : 'bg-white/80 text-brand-indigo/70 hover:text-brand-indigo border-white/70 hover:bg-white'}"
-          title="Mode Sensor Saldo di Tempat Umum"
+          title={$privacyMode ? 'Sensor Saldo Aktif (Klik untuk Tampilkan)' : 'Sensor Saldo (Klik untuk Sembunyikan)'}
         >
           {#if $privacyMode}
             <EyeOff class="w-4 h-4 text-brand-peach-dark" />
-            <span class="hidden lg:inline">Sensor Aktif</span>
           {:else}
             <Eye class="w-4 h-4 text-brand-indigo/60" />
-            <span class="hidden lg:inline">Sensor Saldo</span>
           {/if}
         </button>
 
@@ -162,63 +163,106 @@
           {/if}
         </button>
 
-        <!-- Bot Gateway Status -->
-        <button
-          on:click={onOpenBotStatus}
-          class="p-2.5 rounded-2xl bg-white/80 hover:bg-white border border-white/70 text-brand-indigo/70 hover:text-brand-indigo transition shadow-xs"
-          title="Status WhatsApp & Telegram Bot"
-        >
-          <Bot class="w-4 h-4" />
-        </button>
-
-        <!-- Kelola Keluarga & Daftar Anggota -->
-        <button
-          on:click={onOpenInvite}
-          class="inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-gradient-to-r from-brand-sky-light to-brand-peach-light hover:from-brand-sky hover:to-brand-peach text-brand-indigo text-xs font-bold border border-white/80 shadow-xs transition"
-          title="Daftar Anggota Keluarga & Undang Anggota"
-        >
-          <Users class="w-4 h-4" />
-          <span class="hidden lg:inline">Keluarga</span>
-        </button>
-
-        <!-- LLM Configuration -->
-        <button
-          on:click={onOpenLLMSettings}
-          class="p-2.5 rounded-2xl bg-white/80 hover:bg-white border border-white/70 text-brand-indigo/70 hover:text-brand-indigo transition shadow-xs"
-          title="Pengaturan Model AI"
-        >
-          <Settings class="w-4 h-4" />
-        </button>
-
-        <!-- Check Update -->
-        <button
-          on:click={handleCheckUpdate}
-          class="p-2.5 rounded-2xl bg-gradient-to-tr from-brand-butter to-brand-sky-light border border-white/80 text-brand-indigo hover:scale-105 transition shadow-xs"
-          title="Periksa Pembaruan Aplikasi"
-        >
-          <Sparkles class="w-4 h-4" />
-        </button>
-
-        <!-- User Profile & Logout -->
+        <!-- Profile & Context Menu Dropdown -->
         {#if $auth.isAuthenticated}
-          <button
-            on:click={onOpenProfile}
-            class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-2xl bg-white/80 hover:bg-white border border-white/70 text-brand-indigo text-xs font-bold transition shadow-xs"
-            title="Edit Profil & Nomor HP Saya"
-          >
-            <div class="w-6 h-6 rounded-full bg-brand-peach text-brand-indigo text-[11px] font-extrabold flex items-center justify-center">
-              {$auth.user?.name ? $auth.user.name.substring(0, 1).toUpperCase() : 'U'}
-            </div>
-            <span class="hidden xl:inline max-w-[90px] truncate">{$auth.user?.name}</span>
-          </button>
+          <div class="relative">
+            <button
+              on:click={() => (isProfileMenuOpen = !isProfileMenuOpen)}
+              class="inline-flex items-center gap-2 pl-1.5 pr-2.5 py-1.5 rounded-2xl bg-white/80 hover:bg-white border border-white/80 text-brand-indigo text-xs font-bold transition shadow-xs hover:shadow-sm"
+            >
+              <div class="w-7 h-7 rounded-xl bg-gradient-to-tr from-brand-peach to-brand-butter text-brand-indigo text-xs font-black flex items-center justify-center shadow-xs shrink-0">
+                {$auth.user?.name ? $auth.user.name.substring(0, 1).toUpperCase() : 'U'}
+              </div>
+              <span class="max-w-[100px] truncate hidden sm:inline">{$auth.user?.name || 'Profil'}</span>
+              <ChevronDown class="w-3.5 h-3.5 text-brand-indigo/50 transition-transform duration-200 {isProfileMenuOpen ? 'rotate-180' : ''}" />
+            </button>
 
-          <button
-            on:click={clearAuth}
-            class="p-2.5 rounded-2xl bg-red-50/80 hover:bg-red-100/90 border border-red-200/50 text-red-600 transition shadow-xs"
-            title="Keluar"
-          >
-            <LogOut class="w-4 h-4" />
-          </button>
+            <!-- Dropdown Context Menu -->
+            {#if isProfileMenuOpen}
+              <!-- Backdrop -->
+              <div class="fixed inset-0 z-40" on:click={() => (isProfileMenuOpen = false)}></div>
+
+              <div class="absolute right-0 mt-2 w-64 rounded-3xl bg-white/95 backdrop-blur-2xl border border-white/80 shadow-glass-lg p-2 z-50 animate-in fade-in zoom-in-95 duration-150 space-y-1">
+                <!-- User Profile Header -->
+                <div class="p-3 bg-gradient-to-r from-brand-sky-light/40 to-brand-peach-light/40 rounded-2xl mb-1 border border-white/60">
+                  <div class="flex items-center gap-2.5">
+                    <div class="w-9 h-9 rounded-2xl bg-brand-peach flex items-center justify-center text-brand-indigo font-black text-sm shrink-0 shadow-xs">
+                      {$auth.user?.name ? $auth.user.name.substring(0, 1).toUpperCase() : 'U'}
+                    </div>
+                    <div class="min-w-0">
+                      <div class="text-xs font-extrabold text-brand-indigo truncate">{$auth.user?.name}</div>
+                      <div class="text-[11px] text-brand-indigo/60 truncate">
+                        {$auth.family ? `Keluarga ${$auth.family.name}` : ($auth.user?.email || 'Akun')}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Menu Item: Edit Profile -->
+                <button
+                  type="button"
+                  on:click={() => { isProfileMenuOpen = false; onOpenProfile(); }}
+                  class="w-full flex items-center gap-2.5 px-3 py-2 rounded-2xl text-xs font-semibold text-brand-indigo/80 hover:text-brand-indigo hover:bg-brand-sky/20 transition text-left"
+                >
+                  <User class="w-4 h-4 text-brand-indigo/60 shrink-0" />
+                  <span>Edit Profil & No HP</span>
+                </button>
+
+                <!-- Menu Item: Kelola Keluarga -->
+                <button
+                  type="button"
+                  on:click={() => { isProfileMenuOpen = false; onOpenInvite(); }}
+                  class="w-full flex items-center gap-2.5 px-3 py-2 rounded-2xl text-xs font-semibold text-brand-indigo/80 hover:text-brand-indigo hover:bg-brand-peach/20 transition text-left"
+                >
+                  <Users class="w-4 h-4 text-brand-peach-dark shrink-0" />
+                  <span>Kelola Keluarga & Anggota</span>
+                </button>
+
+                <!-- Menu Item: Status Bot Monee -->
+                <button
+                  type="button"
+                  on:click={() => { isProfileMenuOpen = false; onOpenBotStatus(); }}
+                  class="w-full flex items-center gap-2.5 px-3 py-2 rounded-2xl text-xs font-semibold text-brand-indigo/80 hover:text-brand-indigo hover:bg-brand-butter/30 transition text-left"
+                >
+                  <Bot class="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Status Bot Monee & Chat</span>
+                </button>
+
+                <!-- Menu Item: Pengaturan AI (LLM) -->
+                <button
+                  type="button"
+                  on:click={() => { isProfileMenuOpen = false; onOpenLLMSettings(); }}
+                  class="w-full flex items-center gap-2.5 px-3 py-2 rounded-2xl text-xs font-semibold text-brand-indigo/80 hover:text-brand-indigo hover:bg-brand-sky/20 transition text-left"
+                >
+                  <Settings class="w-4 h-4 text-brand-indigo/60 shrink-0" />
+                  <span>Pengaturan Model AI (LLM)</span>
+                </button>
+
+                <!-- Menu Item: Periksa Pembaruan -->
+                <button
+                  type="button"
+                  on:click={() => { isProfileMenuOpen = false; handleCheckUpdate(); }}
+                  class="w-full flex items-center gap-2.5 px-3 py-2 rounded-2xl text-xs font-semibold text-brand-indigo/80 hover:text-brand-indigo hover:bg-brand-butter/30 transition text-left"
+                >
+                  <Sparkles class="w-4 h-4 text-amber-500 shrink-0" />
+                  <span>Periksa Pembaruan</span>
+                </button>
+
+                <!-- Divider -->
+                <div class="my-1 border-t border-black/5"></div>
+
+                <!-- Menu Item: Logout -->
+                <button
+                  type="button"
+                  on:click={() => { isProfileMenuOpen = false; clearAuth(); }}
+                  class="w-full flex items-center gap-2.5 px-3 py-2 rounded-2xl text-xs font-bold text-red-600 hover:bg-red-50 transition text-left"
+                >
+                  <LogOut class="w-4 h-4 text-red-500 shrink-0" />
+                  <span>Keluar (Logout)</span>
+                </button>
+              </div>
+            {/if}
+          </div>
         {/if}
       </div>
     </div>
