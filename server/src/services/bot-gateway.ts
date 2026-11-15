@@ -24,6 +24,95 @@ export class BotGateway {
   public static isWaConnected: boolean = false;
   private static sentMessageIds: Set<string> = new Set();
 
+  // Bi-directional In-Memory Cache: WhatsApp Multi-Device LID (@lid) <-> Real Phone JID (@s.whatsapp.net)
+  private static lidToJidMap = new Map<string, string>();
+  private static jidToLidMap = new Map<string, string>();
+
+  /**
+   * Simpan pemetaan nomor telepon WhatsApp asli dengan LID akun
+   */
+  public static saveLidMapping(lid: string, jidOrPn: string) {
+    if (!lid || !jidOrPn) return;
+    const cleanLid = lid.split('@')[0]?.split(':')[0];
+    const norm = normalizePhone(jidOrPn);
+    const cleanPnJid = norm.whatsappJid || (jidOrPn.includes('@') ? jidOrPn : `${jidOrPn}@s.whatsapp.net`);
+
+    if (cleanLid && cleanPnJid) {
+      this.lidToJidMap.set(cleanLid, cleanPnJid);
+      this.lidToJidMap.set(`${cleanLid}@lid`, cleanPnJid);
+      this.jidToLidMap.set(cleanPnJid, cleanLid);
+      if (norm.cleanDigits) {
+        this.jidToLidMap.set(norm.cleanDigits, cleanLid);
+      }
+    }
+  }
+
+  /**
+   * Pra-sinkronisasi LID seluruh keluarga terdaftar langsung dari WhatsApp Server & Database
+   */
+  public static async syncFamilyLids() {
+    if (!this.waSock || !this.isWaConnected) return;
+    try {
+      // 1. Baca whitelist yang memiliki platform WHATSAPP
+      const whitelists = await prisma.botWhitelist.findMany({
+        where: { platform: 'WHATSAPP' },
+        include: { family: { include: { users: true } } },
+      });
+      for (const w of whitelists) {
+        if (w.identifier && w.family?.users?.[0]?.whatsappNumber) {
+          const userPhone = w.family.users[0].whatsappNumber;
+          const norm = normalizePhone(userPhone);
+          if (w.identifier.includes('@lid') || /^\d{13,}$/.test(w.identifier)) {
+            this.saveLidMapping(w.identifier, norm.whatsappJid);
+          }
+        }
+      }
+
+      // 2. Query USync onWhatsApp untuk semua user yang terdaftar
+      const candidateUsers = await prisma.user.findMany({
+        where: { whatsappNumber: { not: null } },
+        include: { family: true },
+      });
+
+      for (const u of candidateUsers) {
+        if (!u.whatsappNumber) continue;
+        const norm = normalizePhone(u.whatsappNumber);
+        if (!norm.fullNumber) continue;
+
+        try {
+          const results = await this.waSock.onWhatsApp(norm.fullNumber);
+          if (results && results.length > 0) {
+            for (const r of results) {
+              if (r.lid) {
+                console.log(`[WA Gateway] Auto-synced user ${u.name}: LID ${r.lid} <-> Phone JID ${norm.whatsappJid}`);
+                this.saveLidMapping(r.lid, norm.whatsappJid);
+
+                await prisma.botWhitelist.upsert({
+                  where: {
+                    familyId_platform_identifier: {
+                      familyId: u.familyId,
+                      platform: 'WHATSAPP',
+                      identifier: r.lid.split('@')[0]?.split(':')[0],
+                    },
+                  },
+                  update: { name: u.name },
+                  create: {
+                    familyId: u.familyId,
+                    platform: 'WHATSAPP',
+                    identifier: r.lid.split('@')[0]?.split(':')[0],
+                    name: u.name,
+                  },
+                });
+              }
+            }
+          }
+        } catch (_) {}
+      }
+    } catch (err) {
+      console.warn('[WA Gateway] syncFamilyLids warning:', err);
+    }
+  }
+
   /**
    * Inisialisasi Gateway WhatsApp (Baileys)
    */
@@ -84,6 +173,30 @@ export class BotGateway {
         console.log('✅ WhatsApp Baileys terhubung dan siap melayani keluarga!');
         // Sinkronisasi seluruh token/keys ke database
         await this.syncAuthToDB(authDir);
+        // Pre-sync seluruh LID keluarga terdaftar
+        await this.syncFamilyLids();
+      }
+    });
+
+    // Tangkap sinkronisasi nomor telepon resmi dari Baileys (chats.phoneNumberShare & contacts)
+    sock.ev.on('chats.phoneNumberShare', ({ lid, jid }: any) => {
+      console.log(`[WA Gateway] chats.phoneNumberShare event: LID ${lid} <-> JID ${jid}`);
+      this.saveLidMapping(lid, jid);
+    });
+
+    sock.ev.on('contacts.upsert', (contacts: any[]) => {
+      for (const c of contacts) {
+        if (c.lid && (c.jid || c.id?.endsWith('@s.whatsapp.net'))) {
+          this.saveLidMapping(c.lid, c.jid || c.id);
+        }
+      }
+    });
+
+    sock.ev.on('contacts.update', (updates: any[]) => {
+      for (const c of updates) {
+        if (c.lid && (c.jid || c.id?.endsWith('@s.whatsapp.net'))) {
+          this.saveLidMapping(c.lid, c.jid || c.id);
+        }
       }
     });
 
@@ -105,6 +218,12 @@ export class BotGateway {
           remoteJid.includes('@g.us')
         ) {
           continue;
+        }
+
+        // Tangkap mapping LID jika pesan menyertakan senderPn / participantPn
+        const senderPn = (msg.key as any).senderPn || (msg.key as any).participantPn;
+        if (remoteJid.endsWith('@lid') && senderPn) {
+          this.saveLidMapping(remoteJid, senderPn);
         }
 
         // Jika dari akun bot sendiri (fromMe)
@@ -178,6 +297,26 @@ export class BotGateway {
     const rawId = cleanJid.split('@')[0];
     const localPhone = phoneNumber.startsWith('62') ? phoneNumber.slice(2) : phoneNumber;
     const suffix = phoneNumber.length >= 8 ? phoneNumber.slice(-8) : '';
+
+    // 0. Cek In-Memory Cache LID -> Phone JID
+    const cachedPhoneJid = this.lidToJidMap.get(cleanJid) || this.lidToJidMap.get(rawId);
+    if (cachedPhoneJid) {
+      const normCached = normalizePhone(cachedPhoneJid);
+      if (normCached.cleanDigits && normCached.cleanDigits.length >= 5) {
+        const userByCached = await prisma.user.findFirst({
+          where: {
+            OR: [
+              { whatsappNumber: normCached.cleanDigits },
+              { whatsappNumber: `0${normCached.cleanDigits}` },
+              { whatsappNumber: `62${normCached.cleanDigits}` },
+              { whatsappJid: normCached.whatsappJid },
+            ],
+          },
+          include: { family: true },
+        });
+        if (userByCached) return userByCached;
+      }
+    }
 
     // 1. Ekstraksi dari Sender/Participant Phone Number metadata Baileys jika ada (senderPn / participantPn)
     const key = msg?.key as any;
@@ -392,6 +531,44 @@ export class BotGateway {
   }
 
   /**
+   * Resolusi JID tujuan pengiriman balasan WhatsApp (Selalu prioritaskan Phone JID @s.whatsapp.net daripada LID @lid)
+   */
+  private static resolveReplyJid(
+    cleanJid: string,
+    user?: any,
+    msg?: proto.IWebMessageInfo
+  ): string {
+    // 1. Jika user terdaftar dan punya whatsappJid (@s.whatsapp.net), gunakan langsung!
+    if (user?.whatsappJid && user.whatsappJid.endsWith('@s.whatsapp.net')) {
+      return user.whatsappJid;
+    }
+
+    // 2. Jika user punya nomor HP WhatsApp, bangun format @s.whatsapp.net
+    if (user?.whatsappNumber) {
+      const norm = normalizePhone(user.whatsappNumber);
+      if (norm.whatsappJid) return norm.whatsappJid;
+    }
+
+    // 3. Periksa metadata pesan masuk (senderPn / participantPn)
+    const key = msg?.key as any;
+    const senderPn = key?.senderPn || key?.participantPn || (msg as any)?.stanza?.attrs?.sender_pn;
+    if (senderPn) {
+      const normPn = normalizePhone(senderPn);
+      if (normPn.whatsappJid) return normPn.whatsappJid;
+    }
+
+    // 4. Periksa memory cache mapping LID -> Phone JID
+    const rawId = cleanJid.split('@')[0];
+    const cachedPn = this.lidToJidMap.get(cleanJid) || this.lidToJidMap.get(rawId);
+    if (cachedPn) {
+      return cachedPn.endsWith('@s.whatsapp.net') ? cachedPn : `${cachedPn}@s.whatsapp.net`;
+    }
+
+    // 5. Fallback ke cleanJid
+    return cleanJid;
+  }
+
+  /**
    * Pemrosesan Pesan Masuk WhatsApp (Strict Whitelist Protected dengan Auto-Guide & Chat History)
    */
   private static async handleIncomingWhatsAppMessage(msg: proto.IWebMessageInfo) {
@@ -415,10 +592,12 @@ export class BotGateway {
       '';
 
     let user: any = null;
+    let replyJid = cleanJid;
 
     try {
       // 1. Cek Whitelist: User terdaftar di database
       user = await this.resolveUserFromWhatsApp(cleanJid, phoneNumber, msg);
+      replyJid = this.resolveReplyJid(cleanJid, user, msg);
 
       // JIKA TIDAK ADA DI WHITELIST:
       // Jangan silent drop! Beri tahu pengguna bahwa nomornya belum terdaftar dan catat ke riwayat chat.
@@ -446,7 +625,7 @@ export class BotGateway {
           metadata: { cleanJid, phoneNumber, rawRemoteJid },
         });
 
-        await this.sendWhatsAppMessage(cleanJid, unwhitelistedReply);
+        await this.sendWhatsAppMessage(replyJid, unwhitelistedReply);
         return;
       }
 
@@ -473,7 +652,7 @@ export class BotGateway {
             status: BotChatStatus.SUCCESS,
             metadata: { pendingActionId: activePending.id, status: response.status },
           });
-          await this.sendWhatsAppMessage(cleanJid, replyMsg);
+          await this.sendWhatsAppMessage(replyJid, replyMsg);
           return;
         }
       }
@@ -493,7 +672,7 @@ export class BotGateway {
           replyContent: report,
           status: BotChatStatus.CONSULTATION,
         });
-        await this.sendWhatsAppMessage(cleanJid, report);
+        await this.sendWhatsAppMessage(replyJid, report);
         return;
       }
       if (trimmedLower === '/hariini' || trimmedLower === 'hari ini' || trimmedLower === '/hari_ini') {
@@ -509,7 +688,7 @@ export class BotGateway {
           replyContent: report,
           status: BotChatStatus.CONSULTATION,
         });
-        await this.sendWhatsAppMessage(cleanJid, report);
+        await this.sendWhatsAppMessage(replyJid, report);
         return;
       }
       if (trimmedLower === '/kemarin' || trimmedLower === 'kemarin') {
@@ -525,7 +704,7 @@ export class BotGateway {
           replyContent: report,
           status: BotChatStatus.CONSULTATION,
         });
-        await this.sendWhatsAppMessage(cleanJid, report);
+        await this.sendWhatsAppMessage(replyJid, report);
         return;
       }
       if (trimmedLower === '/bulanini' || trimmedLower === 'bulan ini' || trimmedLower === '/bulan_ini') {
@@ -541,7 +720,7 @@ export class BotGateway {
           replyContent: report,
           status: BotChatStatus.CONSULTATION,
         });
-        await this.sendWhatsAppMessage(cleanJid, report);
+        await this.sendWhatsAppMessage(replyJid, report);
         return;
       }
       if (trimmedLower === '/sinkingfund' || trimmedLower === 'sinking fund' || trimmedLower === '/tabungan' || trimmedLower === 'tabungan') {
@@ -557,7 +736,7 @@ export class BotGateway {
           replyContent: report,
           status: BotChatStatus.CONSULTATION,
         });
-        await this.sendWhatsAppMessage(cleanJid, report);
+        await this.sendWhatsAppMessage(replyJid, report);
         return;
       }
       if (trimmedLower === '/tagihan' || trimmedLower === 'tagihan' || trimmedLower === '/bills') {
@@ -573,7 +752,7 @@ export class BotGateway {
           replyContent: report,
           status: BotChatStatus.CONSULTATION,
         });
-        await this.sendWhatsAppMessage(cleanJid, report);
+        await this.sendWhatsAppMessage(replyJid, report);
         return;
       }
       if (trimmedLower === '/help' || trimmedLower === '/bantuan' || trimmedLower === 'bantuan' || trimmedLower === 'help' || trimmedLower === '/start') {
@@ -589,7 +768,7 @@ export class BotGateway {
           replyContent: report,
           status: BotChatStatus.CONSULTATION,
         });
-        await this.sendWhatsAppMessage(cleanJid, report);
+        await this.sendWhatsAppMessage(replyJid, report);
         return;
       }
       if (trimmedLower === '/help' || trimmedLower === '/bantuan' || trimmedLower === 'bantuan' || trimmedLower === 'help' || trimmedLower === '/start') {
@@ -605,7 +784,7 @@ export class BotGateway {
           replyContent: report,
           status: BotChatStatus.CONSULTATION,
         });
-        await this.sendWhatsAppMessage(cleanJid, report);
+        await this.sendWhatsAppMessage(replyJid, report);
         return;
       }
 
@@ -737,7 +916,7 @@ export class BotGateway {
 
     // 4. Handle Media (Foto Nota / Tulisan Tangan Kertas / Voice Note)
     if (msgType === 'imageMessage') {
-      await this.sendWhatsAppMessage(cleanJid, '🔍 Sedang membaca foto nota / tulisan tangan Anda dengan AI...');
+      await this.sendWhatsAppMessage(replyJid, '🔍 Sedang membaca foto nota / tulisan tangan Anda dengan AI...');
       try {
         const buffer = await downloadMediaMessage(msg, 'buffer', {});
         imageBase64 = buffer.toString('base64');
@@ -745,7 +924,7 @@ export class BotGateway {
         console.error('Gagal mengunduh gambar WA:', err);
       }
     } else if (msgType === 'audioMessage') {
-      await this.sendWhatsAppMessage(cleanJid, '🎙️ Sedang mendengarkan rekaman suara Anda...');
+      await this.sendWhatsAppMessage(replyJid, '🎙️ Sedang mendengarkan rekaman suara Anda...');
       try {
         const buffer = await downloadMediaMessage(msg, 'buffer', {});
         audioBase64 = buffer.toString('base64');
@@ -812,7 +991,7 @@ export class BotGateway {
         replyContent: processed.replyText,
         status: BotChatStatus.CONSULTATION,
       });
-      await this.sendWhatsAppMessage(cleanJid, processed.replyText);
+      await this.sendWhatsAppMessage(replyJid, processed.replyText);
       return;
     }
 
@@ -850,7 +1029,7 @@ export class BotGateway {
         status: BotChatStatus.PENDING_APPROVAL,
         metadata: { actionType: 'UPDATE_TRANSACTION', target: processed.targetDescription },
       });
-      await this.sendWhatsAppMessage(cleanJid, summaryText);
+      await this.sendWhatsAppMessage(replyJid, summaryText);
       return;
     }
 
@@ -882,7 +1061,7 @@ export class BotGateway {
         status: BotChatStatus.PENDING_APPROVAL,
         metadata: { actionType: 'DELETE_TRANSACTION', target: processed.targetDescription },
       });
-      await this.sendWhatsAppMessage(cleanJid, summaryText);
+      await this.sendWhatsAppMessage(replyJid, summaryText);
       return;
     }
 
@@ -917,7 +1096,7 @@ export class BotGateway {
         status: BotChatStatus.PENDING_APPROVAL,
         metadata: { actionType: 'CREATE_WALLET', name: processed.walletName },
       });
-      await this.sendWhatsAppMessage(cleanJid, summaryText);
+      await this.sendWhatsAppMessage(replyJid, summaryText);
       return;
     }
 
@@ -958,7 +1137,7 @@ export class BotGateway {
         status: BotChatStatus.PENDING_APPROVAL,
         metadata: { actionType: 'TRANSFER_WALLET', amount: numAmount },
       });
-      await this.sendWhatsAppMessage(cleanJid, summaryText);
+      await this.sendWhatsAppMessage(replyJid, summaryText);
       return;
     }
 
@@ -998,7 +1177,7 @@ export class BotGateway {
         status: BotChatStatus.PENDING_APPROVAL,
         metadata: { actionType: 'SET_BUDGET', category: catName, budget: monthlyBudget },
       });
-      await this.sendWhatsAppMessage(cleanJid, summaryText);
+      await this.sendWhatsAppMessage(replyJid, summaryText);
       return;
     }
 
@@ -1036,7 +1215,7 @@ export class BotGateway {
         status: BotChatStatus.PENDING_APPROVAL,
         metadata: { actionType: 'CREATE_SINKING_FUND', name: processed.sinkingFundName },
       });
-      await this.sendWhatsAppMessage(cleanJid, summaryText);
+      await this.sendWhatsAppMessage(replyJid, summaryText);
       return;
     }
 
@@ -1076,7 +1255,7 @@ export class BotGateway {
         status: BotChatStatus.PENDING_APPROVAL,
         metadata: { actionType: 'CREATE_RECURRING_BILL', name: processed.billName },
       });
-      await this.sendWhatsAppMessage(cleanJid, summaryText);
+      await this.sendWhatsAppMessage(replyJid, summaryText);
       return;
     }
 
@@ -1094,7 +1273,7 @@ export class BotGateway {
         replyContent: clarifyText,
         status: BotChatStatus.CONSULTATION,
       });
-      await this.sendWhatsAppMessage(cleanJid, clarifyText);
+      await this.sendWhatsAppMessage(replyJid, clarifyText);
       return;
     }
 
@@ -1165,7 +1344,7 @@ export class BotGateway {
       metadata: { actionType: 'CREATE_TRANSACTION', amount: processed.amount, description: processed.description },
     });
 
-    await this.sendWhatsAppMessage(cleanJid, summaryText);
+    await this.sendWhatsAppMessage(replyJid, summaryText);
     } catch (err: any) {
       console.error('❌ [BotGateway] Error handling incoming WhatsApp message:', err);
       const errReply = `Mohon maaf Kak, terjadi kendala saat Monee memproses pesan Anda: ${err?.message || 'Kesalahan sistem'}. Mohon coba lagi sesaat lagi ya Kak. 🎀`;
@@ -1181,21 +1360,46 @@ export class BotGateway {
         status: BotChatStatus.ERROR,
         metadata: { error: String(err?.stack || err?.message || err) },
       });
-      await this.sendWhatsAppMessage(cleanJid, errReply);
+      await this.sendWhatsAppMessage(replyJid, errReply);
     }
   }
 
   /**
-   * Kirim pesan teks WhatsApp ke nomor tertentu
+   * Kirim pesan teks WhatsApp ke nomor tertentu (Auto-resolve LID -> Phone JID, Support Quoted Msg)
    */
-  static async sendWhatsAppMessage(jid: string, text: string) {
+  static async sendWhatsAppMessage(
+    jid: string,
+    text: string,
+    options: { quoted?: proto.IWebMessageInfo } = {}
+  ) {
     if (!this.waSock || !this.isWaConnected) {
       console.warn('Tidak dapat mengirim pesan WhatsApp: Baileys socket tidak aktif.');
       return null;
     }
     try {
-      const cleanTarget = jid.includes('@') ? jid.split(':')[0] + '@' + jid.split('@')[1] : `${jid}@s.whatsapp.net`;
-      const sent = await this.waSock.sendMessage(cleanTarget, { text });
+      let targetJid = jid.trim();
+
+      // Jika target adalah LID, otomatis alihkan ke Phone JID (@s.whatsapp.net) yang terpetakan
+      if (targetJid.endsWith('@lid')) {
+        const rawLid = targetJid.split('@')[0]?.split(':')[0];
+        const mappedPn = this.lidToJidMap.get(targetJid) || this.lidToJidMap.get(rawLid);
+        if (mappedPn) {
+          targetJid = mappedPn.endsWith('@s.whatsapp.net') ? mappedPn : `${mappedPn}@s.whatsapp.net`;
+          console.log(`[WA Gateway] Mengalihkan tujuan pengiriman pesan dari LID ${jid} ke Phone JID ${targetJid}`);
+        }
+      }
+
+      const cleanTarget = targetJid.includes('@')
+        ? targetJid.split(':')[0] + '@' + targetJid.split('@')[1]
+        : `${targetJid}@s.whatsapp.net`;
+
+      const msgPayload: any = { text };
+      const sendOptions: any = {};
+      if (options?.quoted) {
+        sendOptions.quoted = options.quoted;
+      }
+
+      const sent = await this.waSock.sendMessage(cleanTarget, msgPayload, sendOptions);
       if (sent?.key?.id) {
         this.sentMessageIds.add(sent.key.id);
         if (this.sentMessageIds.size > 200) {
@@ -1205,7 +1409,7 @@ export class BotGateway {
       }
       return sent;
     } catch (err) {
-      console.error('Error sending WhatsApp message:', err);
+      console.error('Error sending WhatsApp message to', jid, err);
       return null;
     }
   }
