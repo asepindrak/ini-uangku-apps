@@ -168,4 +168,19 @@ export class TimezoneService {
       ...(options || { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
     });
   }
+
+  /**
+   * Format tanggal dan jam lengkap (e.g. 15 Nov 2026 04.21) sesuai timezone
+   */
+  static formatDateTime(
+    date: Date | string,
+    tz: string = this.DEFAULT_TIMEZONE,
+    options?: Intl.DateTimeFormatOptions
+  ): string {
+    const d = typeof date === 'string' ? new Date(date) : date;
+    return d.toLocaleString('id-ID', {
+      timeZone: tz,
+      ...(options || { dateStyle: 'medium', timeStyle: 'short' }),
+    });
+  }
 }

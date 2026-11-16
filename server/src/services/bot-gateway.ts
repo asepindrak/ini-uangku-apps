@@ -1003,7 +1003,7 @@ export class BotGateway {
           actionType: p.actionType,
           summary: p.summaryText || `${payload?.description || 'Transaksi'} Rp ${(payload?.amount || 0).toLocaleString('id-ID')}`,
           proposedDate: payload?.transactionDate || null,
-          createdAt: TimezoneService.formatDate(p.createdAt, tz, { dateStyle: 'medium', timeStyle: 'short' }),
+          createdAt: TimezoneService.formatDateTime(p.createdAt, tz),
         };
       });
 
