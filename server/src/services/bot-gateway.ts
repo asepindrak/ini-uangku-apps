@@ -694,10 +694,10 @@ export class BotGateway {
 
       const familyId = user.familyId;
 
-      // 2. Cek apakah pesan adalah persetujuan untuk Draf yang sedang aktif
-      const activePending = await ApprovalEngine.getActivePendingAction(user.id);
+      // 2. Cek apakah pesan adalah persetujuan/penolakan untuk Draf yang sedang aktif
+      const activePending = await ApprovalEngine.getActivePendingAction(user.id, user.familyId);
       if (activePending && textContent) {
-        const response = await ApprovalEngine.processResponse(user.id, textContent);
+        const response = await ApprovalEngine.processResponse(user.id, textContent, user.familyId);
         if (response.status === 'APPROVED' || response.status === 'REJECTED') {
           let replyMsg = response.message;
           if (response.alert) {

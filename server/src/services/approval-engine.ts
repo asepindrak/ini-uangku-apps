@@ -57,10 +57,11 @@ export class ApprovalEngine {
   }
 
   /**
-   * Cek apakah user memiliki aksi pending
+   * Cek apakah user (atau keluarga, jika Manager) memiliki aksi pending
    */
-  static async getActivePendingAction(userId: string) {
-    return prisma.pendingAction.findFirst({
+  static async getActivePendingAction(userId: string, familyId?: string) {
+    // 1. Cek aksi pending dari user itu sendiri terlebih dahulu
+    const ownPending = await prisma.pendingAction.findFirst({
       where: {
         userId,
         status: ActionStatus.PENDING_APPROVAL,
@@ -75,16 +76,46 @@ export class ApprovalEngine {
         user: true,
       },
     });
+    if (ownPending) return ownPending;
+
+    // 2. Jika user adalah MANAGER (Kepala Keluarga) dan familyId tersedia:
+    // Izinkan Manager menyetujui atau menolak draf anggota keluarga lain via chat!
+    if (familyId) {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { role: true },
+      });
+      if (user?.role === 'MANAGER') {
+        return prisma.pendingAction.findFirst({
+          where: {
+            familyId,
+            status: ActionStatus.PENDING_APPROVAL,
+            expiresAt: {
+              gt: new Date(),
+            },
+          },
+          orderBy: {
+            createdAt: 'desc',
+          },
+          include: {
+            user: true,
+          },
+        });
+      }
+    }
+
+    return null;
   }
 
   /**
-   * Proses respon dari user (Ya / Setuju / Batal / Koreksi)
+   * Proses respon dari user (Ya / Setuju / Tolak / Batal / Koreksi)
    */
   static async processResponse(
     userId: string,
-    responseRaw: string
+    responseRaw: string,
+    familyId?: string
   ): Promise<{ status: 'APPROVED' | 'REJECTED' | 'NEEDS_CORRECTION' | 'NO_PENDING'; message: string; alert?: string }> {
-    const pending = await this.getActivePendingAction(userId);
+    const pending = await this.getActivePendingAction(userId, familyId);
     if (!pending) {
       return {
         status: 'NO_PENDING',
@@ -93,14 +124,19 @@ export class ApprovalEngine {
     }
 
     const cleanText = responseRaw.trim().toLowerCase();
-    const isApproval = ['ya', 'setuju', 'oke', 'ok', 'yes', 'siap', '1', 'y', 'benar', 'betul', 'acc', 'lanjutkan'].includes(cleanText);
-    const isRejection = ['batal', 'tidak', 'ga jadi', 'batalin', 'cancel', 'no', 'jangan', 'skip', '0'].includes(cleanText);
+    const isApproval = [
+      'ya', 'setuju', 'oke', 'ok', 'yes', 'siap', '1', 'y', 'benar', 'betul', 'acc', 'lanjutkan', 'setujui', 'simpan', 'approve'
+    ].includes(cleanText);
+    const isRejection = [
+      'batal', 'tolak', 'tidak', 'ga jadi', 'gak jadi', 'batalin', 'cancel', 'no', 'jangan', 'skip', '0', 'reject', 'tolak saja', 'tolak draf'
+    ].includes(cleanText);
 
     if (isApproval) {
       const result = await this.executeAction(pending);
+      const submitterInfo = pending.user?.name && pending.userId !== userId ? ` dari Kak ${pending.user.name}` : '';
       return {
         status: 'APPROVED',
-        message: result.message,
+        message: `${result.message}${submitterInfo ? `\n👤 *Diajukan oleh:* Kak ${pending.user?.name || ''}` : ''}`,
         alert: result.alert,
       };
     } else if (isRejection) {
@@ -108,9 +144,12 @@ export class ApprovalEngine {
         where: { id: pending.id },
         data: { status: ActionStatus.REJECTED },
       });
+      const payload = (pending.proposedPayload as any) || {};
+      const desc = payload?.description || pending.summaryText || 'Transaksi';
+      const submitter = pending.user?.name ? ` (diajukan oleh Kak ${pending.user.name})` : '';
       return {
         status: 'REJECTED',
-        message: '❌ Siap Kak, transaksi dibatalkan dan tidak Monee catat ke pembukuan. 🎀',
+        message: `❌ Siap Kak, draf "${desc}"${submitter} berhasil DITOLAK/DIBATALKAN dan tidak Monee catat ke pembukuan. 🎀`,
       };
     } else {
       // Input pengguna berupa koreksi teks
