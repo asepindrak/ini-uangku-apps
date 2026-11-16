@@ -24,6 +24,7 @@ export class BotGateway {
   private static waSock: any = null;
   public static latestWaQrCode: string | null = null;
   public static isWaConnected: boolean = false;
+  public static lastSendError: string | null = null;
   private static sentMessageIds: Set<string> = new Set();
   private static sentMessageStore = new Map<string, any>();
   private static syncAuthTimer: NodeJS.Timeout | null = null;
@@ -151,11 +152,19 @@ export class BotGateway {
       fs.mkdirSync(authDir, { recursive: true });
     }
 
+    // Tutup socket lama secara bersih jika sudah ada
+    if (this.waSock) {
+      try {
+        this.waSock.ev.removeAllListeners('connection.update');
+        this.waSock.ev.removeAllListeners('messages.upsert');
+        this.waSock.ev.removeAllListeners('creds.update');
+        this.waSock.end(undefined);
+      } catch (_) {}
+      this.waSock = null;
+    }
+
     // 1. Auto-Restore sesi dari PostgreSQL jika folder lokal kosong
     await this.restoreAuthFromDB(authDir);
-
-    // Hapus sesi kontak kadaluarsa yang sempat desync agar terbentuk handshake Signal baru yang segar
-    await this.resetContactSession('17420454518973');
 
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
     const { version } = await fetchLatestBaileysVersion();
@@ -1655,9 +1664,11 @@ export class BotGateway {
           }
         }
       }
+      this.lastSendError = null;
       console.log(`[WA Gateway] Pesan berhasil terkirim ke ${target} (id: ${sent?.key?.id})`);
       return sent;
     } catch (err: any) {
+      this.lastSendError = err?.message || String(err);
       console.warn(`[WA Gateway] Gagal mengirim pesan ke ${target}:`, err?.message || err);
 
       // Coba alternate target (fallback LID <-> PN)
@@ -1671,9 +1682,11 @@ export class BotGateway {
               this.sentMessageStore.set(fallbackSent.key.id, fallbackSent.message);
             }
           }
+          this.lastSendError = null;
           console.log(`[WA Gateway] Pesan berhasil terkirim via fallback ke ${altTarget} (id: ${fallbackSent?.key?.id})`);
           return fallbackSent;
         } catch (fallbackErr: any) {
+          this.lastSendError = fallbackErr?.message || String(fallbackErr);
           console.error(`[WA Gateway] Fallback ke ${altTarget} juga gagal:`, fallbackErr?.message || fallbackErr);
         }
       }

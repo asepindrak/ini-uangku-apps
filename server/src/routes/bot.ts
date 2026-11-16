@@ -32,6 +32,9 @@ export async function botRoutes(fastify: FastifyInstance) {
     return {
       whatsappConnected: BotGateway.isWaConnected,
       whatsappQr: BotGateway.latestWaQrCode,
+      wsReadyState: (BotGateway as any).waSock?.ws?.readyState ?? null,
+      waUser: (BotGateway as any).waSock?.user ?? null,
+      lastError: BotGateway.lastSendError,
       telegramConnected: TelegramManager.isBotRunning(familyId),
       globalTelegramBotRunning: TelegramManager.isGlobalBotRunning,
       globalTelegramBotUsername: TelegramManager.globalBotUsername,
@@ -108,7 +111,13 @@ export async function botRoutes(fastify: FastifyInstance) {
     const { jid, text } = request.body as any;
     try {
       const result = await BotGateway.sendWhatsAppMessage(jid, text || 'Test ping dari Monee 🎀');
-      return { success: !!result, result: result?.key || null };
+      if (!result) {
+        return reply.status(500).send({
+          success: false,
+          error: BotGateway.lastSendError || 'Gagal mengirim pesan (socket time out / tidak terkirim)',
+        });
+      }
+      return { success: true, result: result?.key || null };
     } catch (e: any) {
       return reply.status(500).send({
         success: false,
