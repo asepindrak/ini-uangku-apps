@@ -1576,24 +1576,34 @@ export class BotGateway {
       return null;
     }
 
-    let target = jid.includes('@')
-      ? jid.split(':')[0] + '@' + jid.split('@')[1]
-      : `${jid}@s.whatsapp.net`;
+    // Normalisasi JID target dengan aman (menghapus device index jika ada)
+    let target = jid.trim();
+    if (target.includes('@')) {
+      const parts = target.split('@');
+      const cleanUser = parts[0].split(':')[0];
+      const domain = parts[1]; // 's.whatsapp.net' atau 'lid'
+      target = `${cleanUser}@${domain}`;
+    } else {
+      const cleanUser = target.split(':')[0];
+      target = `${cleanUser}@s.whatsapp.net`;
+    }
 
     // Pertahankan target asli tempat pesan datang (baik thread @lid WhatsApp Web maupun @s.whatsapp.net Ponsel)
     // Sediakan altTarget untuk fallback jika pengiriman ke target utama terkendala
     let altTarget: string | null = null;
     if (target.endsWith('@lid')) {
-      const rawLid = target.split('@')[0]?.split(':')[0];
+      const rawLid = target.split('@')[0];
       const mappedPn = this.lidToJidMap.get(target) || this.lidToJidMap.get(rawLid);
       if (mappedPn && !mappedPn.endsWith('@lid')) {
-        altTarget = mappedPn.endsWith('@s.whatsapp.net') ? mappedPn : `${mappedPn}@s.whatsapp.net`;
+        const cleanPn = mappedPn.split('@')[0].split(':')[0];
+        altTarget = `${cleanPn}@s.whatsapp.net`;
       }
     } else if (target.endsWith('@s.whatsapp.net')) {
-      const rawPn = target.split('@')[0]?.split(':')[0];
+      const rawPn = target.split('@')[0];
       const mappedLid = this.jidToLidMap.get(target) || this.jidToLidMap.get(rawPn);
       if (mappedLid && mappedLid.endsWith('@lid')) {
-        altTarget = mappedLid;
+        const cleanLid = mappedLid.split('@')[0].split(':')[0];
+        altTarget = `${cleanLid}@lid`;
       }
     }
 
