@@ -1,7 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '../db.js';
-import { TransactionType, InputSource, ActionStatus } from '@prisma/client';
+import { TransactionType, InputSource, ActionStatus, BotChatPlatform, BotChatStatus } from '@prisma/client';
 import { ApprovalEngine } from '../services/approval-engine.js';
+import { BotGateway } from '../services/bot-gateway.js';
+import { normalizePhone } from '../utils/phone.js';
 
 export async function transactionRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', fastify.authenticate);
@@ -443,9 +445,47 @@ export async function transactionRoutes(fastify: FastifyInstance) {
   fastify.post('/pending/:id/respond', async (request, reply) => {
     const { id } = request.params as any;
     const { approved } = request.body as any;
+    const reqUser = (request as any).user;
 
     try {
-      const response = await ApprovalEngine.respondToPendingActionById(id, approved === true);
+      let approverUser: any = null;
+      if (reqUser?.id) {
+        approverUser = await prisma.user.findUnique({
+          where: { id: reqUser.id },
+          select: { id: true, name: true, whatsappNumber: true, whatsappJid: true, familyId: true },
+        });
+      }
+
+      const response = await ApprovalEngine.respondToPendingActionById(id, approved === true, approverUser?.name);
+
+      // Konfirmasi ke WhatsApp approver (Manager) jika aksi disetujui / ditolak via Dashboard
+      if (approverUser) {
+        let approverJid = approverUser.whatsappJid;
+        if (!approverJid && approverUser.whatsappNumber) {
+          approverJid = `${normalizePhone(approverUser.whatsappNumber)}@s.whatsapp.net`;
+        }
+        if (approverJid) {
+          const statusText = approved === true ? 'DISETUJUI' : 'DITOLAK';
+          const confirmMsg =
+            `✅ *Halo Kak ${approverUser.name}!* 🎀\n\n` +
+            `Draf transaksi berhasil Kakak *${statusText}* melalui Dashboard dan ${approved === true ? 'resmi dibukukan ke pencatatan keluarga! ✨' : 'dibatalkan.'}`;
+
+          await BotGateway.sendWhatsAppMessage(approverJid, confirmMsg);
+          await BotGateway.logChatMessage({
+            familyId: approverUser.familyId,
+            userId: approverUser.id,
+            platform: BotChatPlatform.WHATSAPP,
+            senderIdentifier: approverUser.whatsappNumber || approverJid,
+            senderName: 'Monee Notification',
+            messageType: 'text',
+            rawContent: `[Dashboard Action: ${statusText} Draf]`,
+            replyContent: confirmMsg,
+            status: BotChatStatus.SUCCESS,
+            metadata: { pendingActionId: id, approved: approved === true },
+          });
+        }
+      }
+
       return response;
     } catch (err: any) {
       return reply.status(400).send({ error: err.message || 'Gagal memproses persetujuan aksi.' });

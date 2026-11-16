@@ -1,5 +1,7 @@
 import { prisma } from '../db.js';
-import { ActionType, ActionStatus, TransactionType, InputSource, WalletType } from '@prisma/client';
+import { ActionType, ActionStatus, TransactionType, InputSource, WalletType, BotChatPlatform, BotChatStatus } from '@prisma/client';
+import { BotGateway } from './bot-gateway.js';
+import { normalizePhone } from '../utils/phone.js';
 
 export interface ProposedTransactionPayload {
   walletId: string;
@@ -195,6 +197,13 @@ export class ApprovalEngine {
     if (isApproval) {
       const result = await this.executeAction(pending);
       const submitterInfo = pending.user?.name && pending.userId !== userId ? ` dari Kak ${pending.user.name}` : '';
+      
+      // Jika yang menyetujui adalah Manager untuk draf anggota keluarga lain, beri tahu si pembuat draf via WhatsApp!
+      if (pending.userId !== userId) {
+        const approver = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+        await this.notifySubmitterViaWhatsApp(pending, true, approver?.name);
+      }
+
       return {
         status: 'APPROVED',
         message: `${result.message}${submitterInfo ? `\n👤 *Diajukan oleh:* Kak ${pending.user?.name || ''}` : ''}`,
@@ -208,6 +217,13 @@ export class ApprovalEngine {
       const payload = (pending.proposedPayload as any) || {};
       const desc = payload?.description || pending.summaryText || 'Transaksi';
       const submitter = pending.user?.name ? ` (diajukan oleh Kak ${pending.user.name})` : '';
+
+      // Beri tahu pembuat draf via WhatsApp jika ditolak
+      if (pending.userId !== userId) {
+        const approver = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+        await this.notifySubmitterViaWhatsApp(pending, false, approver?.name);
+      }
+
       return {
         status: 'REJECTED',
         message: `❌ Siap Kak, draf "${desc}"${submitter} berhasil DITOLAK/DIBATALKAN dan tidak Monee catat ke pembukuan. 🎀`,
@@ -222,11 +238,67 @@ export class ApprovalEngine {
   }
 
   /**
+   * Kirim notifikasi WhatsApp ke pembuat draf (submitter) jika draf disetujui / ditolak
+   */
+  static async notifySubmitterViaWhatsApp(
+    pending: any,
+    approved: boolean,
+    approverName?: string
+  ) {
+    try {
+      if (!pending?.user) return;
+      const user = pending.user;
+      let targetJid = user.whatsappJid;
+      if (!targetJid && user.whatsappNumber) {
+        targetJid = `${normalizePhone(user.whatsappNumber)}@s.whatsapp.net`;
+      }
+      if (!targetJid) return;
+
+      const payload = (pending.proposedPayload as any) || {};
+      const desc = payload?.description || pending.summaryText || 'Transaksi';
+      const approverText = approverName ? `oleh Kak ${approverName}` : 'oleh Kepala Keluarga';
+
+      let message = '';
+      if (approved) {
+        message =
+          `🎉 *Hore Kak ${user.name || ''}!* 🎀\n\n` +
+          `Draf transaksi yang diajukan telah *DISETUJUI* ${approverText} dan resmi dibukukan ke pencatatan keuangan! ✨\n\n` +
+          `📋 *Rincian Transaksi:*\n` +
+          `• *Keperluan*: ${desc}\n` +
+          (payload?.amount ? `• *Nominal*: Rp ${Number(payload.amount).toLocaleString('id-ID')}\n` : '') +
+          `\nTerima kasih sudah tertib mencatat keuangan keluarga bersama Monee! 🥰`;
+      } else {
+        message =
+          `❌ *Halo Kak ${user.name || ''}* 🎀\n\n` +
+          `Draf transaksi "${desc}" telah *DITOLAK / DIBATALKAN* ${approverText} dan tidak dicatat ke pembukuan.\n\n` +
+          `Jika ada keperluan lain yang ingin dicatat, beri tahu Monee ya Kak! 😊`;
+      }
+
+      await BotGateway.sendWhatsAppMessage(targetJid, message);
+      await BotGateway.logChatMessage({
+        familyId: pending.familyId,
+        userId: user.id,
+        platform: BotChatPlatform.WHATSAPP,
+        senderIdentifier: user.whatsappNumber || targetJid,
+        senderName: 'Monee Notification',
+        messageType: 'text',
+        rawContent: `[Notifikasi Persetujuan Draf: ${desc}]`,
+        replyContent: message,
+        status: BotChatStatus.SUCCESS,
+        metadata: { pendingActionId: pending.id, approved },
+      });
+    } catch (err) {
+      console.error('[ApprovalEngine] Gagal mengirim notifikasi WhatsApp ke submitter:', err);
+    }
+  }
+
+  /**
    * Proses respon approval langsung berdasarkan ID pending action (misal dari aplikasi UI)
    */
   static async respondToPendingActionById(
     pendingId: string,
-    approved: boolean
+    approved: boolean,
+    approverName?: string
   ): Promise<{ status: 'APPROVED' | 'REJECTED'; message: string; alert?: string }> {
     const pending = await prisma.pendingAction.findUnique({
       where: { id: pendingId },
@@ -240,6 +312,10 @@ export class ApprovalEngine {
     if (approved) {
       const result = await this.executeAction(pending);
       const submitterInfo = pending.user?.name ? `\n👤 *Diajukan oleh:* Kak ${pending.user.name}` : '';
+
+      // Kirim notifikasi WhatsApp ke pembuat draf!
+      await this.notifySubmitterViaWhatsApp(pending, true, approverName);
+
       return {
         status: 'APPROVED',
         message: `${result.message}${submitterInfo}`,
@@ -253,6 +329,10 @@ export class ApprovalEngine {
       const payload = (pending.proposedPayload as any) || {};
       const desc = payload?.description || pending.summaryText || 'Transaksi';
       const submitter = pending.user?.name ? ` (diajukan oleh Kak ${pending.user.name})` : '';
+
+      // Kirim notifikasi WhatsApp ke pembuat draf!
+      await this.notifySubmitterViaWhatsApp(pending, false, approverName);
+
       return {
         status: 'REJECTED',
         message: `❌ Siap Kak, draf "${desc}"${submitter} berhasil DITOLAK/DIBATALKAN dan tidak Monee catat ke pembukuan. 🎀`,
