@@ -82,8 +82,13 @@ export interface ProcessedMessageResult {
     | 'CREATE_SINKING_FUND'
     | 'CREATE_RECURRING_BILL'
     | 'SET_DEFAULT_WALLET'
-    | 'UPDATE_WALLET';
+    | 'UPDATE_WALLET'
+    | 'APPROVE_PENDING'
+    | 'REJECT_PENDING';
   
+  // APPROVE_PENDING & REJECT_PENDING:
+  targetPendingId?: string;
+
   // CREATE_TRANSACTION:
   amount?: number;
   description?: string;
@@ -336,6 +341,16 @@ Analisa pesan/media dari pengguna dan tentukan intensi:
       - Mengubah / mengganti nama atau tipe dompet yang sudah ada.
       - Contoh: "ganti nama dompet BCA Utama jadi BCA Pribadi", "ubah nama dompet Kas Tunai jadi Uang Saku", "ganti dompet BCA jadi Bank Mandiri".
       - Cocokkan nama dompet dari "Daftar Dompet & Saldo" di bawah.
+   k. "APPROVE_PENDING":
+      - Menyetujui atau mengeksekusi draf transaksi / aksi yang sedang menunggu persetujuan (Pending Approval).
+      - Terpicu saat pengguna mengirim pesan konfirmasi persetujuan dalam kalimat alami, bahasa santai, maupun kalimat panjang/deskriptif.
+      - Contoh: "ya setujui", "iya setujui aja", "setujui", "acc ya monee", "tolong simpan ya draf tadi", "eksekusi draf belanja chibi kemarin", "sudah benar simpan aja", "draf gas elpiji setujui ya", "ya setujui drafnya".
+      - Cocokkan "targetPendingId" dengan ID dari daftar "Draf Transaksi Menunggu Persetujuan Keluarga" (pilih draf yang sesuai konteks, atau draf paling atas/terbaru jika tidak disebutkan spesifik).
+   l. "REJECT_PENDING":
+      - Menolak atau membatalkan draf transaksi yang sedang menunggu persetujuan.
+      - Terpicu saat pengguna mengirim pesan penolakan atau pembatalan dalam bahasa alami, kalimat santai, maupun penjelasan panjang.
+      - Contoh: "tolak aja", "batalin ya draf tadi", "gak jadi beli tabung gas tolak aja monee", "batalkan drafnya", "jangan dicatat ya", "draf kemarin cancel", "tolak draf belanjaan chibi".
+      - Cocokkan "targetPendingId" dengan ID dari daftar "Draf Transaksi Menunggu Persetujuan Keluarga".
 
 2. "FINANCIAL_CONSULTATION" (Read / Analisis / Konsultasi Waktu):
    - Terpicu saat pengguna BERTANYA, meminta saran, atau bertanya riwayat transaksi ("hari ini apa aja?", "kemarin habis berapa?", "pengeluaran bulan lalu", "pengeluaran tanggal 15", "tahun ini", "apakah saya boros?", "keuangan aku gimana?").
@@ -485,6 +500,22 @@ Jika UPDATE_WALLET:
   "walletName": "BCA Utama",
   "newWalletName": "BCA Pribadi",
   "summaryMessage": "• Ubah Nama Dompet: BCA Utama -> BCA Pribadi"
+}
+
+Jika APPROVE_PENDING:
+{
+  "intent": "TRANSACTION_RECORD",
+  "actionType": "APPROVE_PENDING",
+  "targetPendingId": "id-draf-terkait",
+  "summaryMessage": "Siap Kak! Draf transaksi berhasil disetujui dan dicatat ke pembukuan. 🎀"
+}
+
+Jika REJECT_PENDING:
+{
+  "intent": "TRANSACTION_RECORD",
+  "actionType": "REJECT_PENDING",
+  "targetPendingId": "id-draf-terkait",
+  "summaryMessage": "Siap Kak, draf transaksi berhasil dibatalkan dan tidak dicatat ke pembukuan. 🎀"
 }
 
 Jika FINANCIAL_CONSULTATION:
@@ -700,6 +731,16 @@ Jika FINANCIAL_CONSULTATION:
           newWalletName: parsed.newWalletName || parsed.newName,
           newWalletType: parsed.newWalletType || parsed.newType,
           summaryMessage: parsed.summaryMessage || `• Ubah Dompet ${targetW?.name || ''} menjadi ${parsed.newWalletName || ''}`,
+        };
+      }
+
+      if (parsed.actionType === 'APPROVE_PENDING' || parsed.actionType === 'REJECT_PENDING') {
+        return {
+          intent: 'TRANSACTION_RECORD',
+          actionType: parsed.actionType,
+          targetPendingId: parsed.targetPendingId,
+          summaryMessage: parsed.summaryMessage,
+          replyText: parsed.replyText,
         };
       }
 

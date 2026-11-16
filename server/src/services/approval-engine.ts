@@ -108,6 +108,71 @@ export class ApprovalEngine {
   }
 
   /**
+   * Cek apakah teks input merupakan indikasi persetujuan (approval)
+   */
+  static isApprovalText(text: string): boolean {
+    if (!text) return false;
+    const clean = text.trim().toLowerCase().replace(/[.,!?;:]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!clean) return false;
+
+    // 1. Exact match kata atau frasa umum
+    const exactMatches = new Set([
+      'ya', 'iya', 'y', 'yes', 'ok', 'oke', 'siap', '1', 'benar', 'betul',
+      'acc', 'lanjut', 'lanjutkan', 'setuju', 'setujui', 'simpan', 'approve',
+      'eksekusi', 'gas', 'gaskan', 'deal', 'cocok', 'sudah sesuai', 'sudah benar',
+      'masukkan aja', 'catat aja', 'simpan aja', 'eksekusi aja', 'acc aja', 'setujui aja',
+      'setuju aja', 'iya setuju', 'iya setujui', 'ya setuju', 'ya setujui', 'oke setuju',
+      'oke setujui', 'oke simpan', 'siap setujui', 'siap simpan', 'tolong simpan',
+      'tolong setujui', 'ya simpan', 'ya simpan aja', 'ya setuju aja', 'ya setujui aja',
+      'simpan ya', 'setujui ya', 'setuju ya'
+    ]);
+    if (exactMatches.has(clean)) return true;
+
+    // 2. Frasa persetujuan yang diawali atau mengandung kombinasi kata kunci afirmasi
+    const approvalRegex = /^(ya|iya|yes|y|ok|oke|siap|acc|benar|betul|lanjut|lanjutkan|setuju|setujui|simpan|approve|eksekusi|gas|gaskan)(\s+(ya|setuju|setujui|simpan|approve|eksekusi|acc|masukkan|catat|monee|kak|kakak|dong|deh|aja|saja|semua|draf|draft|transaksi|ini|itu|tersebut|min))+$/i;
+    if (approvalRegex.test(clean)) return true;
+
+    // 3. Frasa sopan: "tolong simpan ya monee", "tolong disetujui ya"
+    const politeApprovalRegex = /^(tolong|mohon|silakan|silahkan)\s+(di)?(setujui|simpan|eksekusi|acc|masukkan|catat)(\s+(ya|monee|kak|kakak|dong|deh|aja|saja|draf|draft|transaksi|ini|itu))*$/i;
+    if (politeApprovalRegex.test(clean)) return true;
+
+    return false;
+  }
+
+  /**
+   * Cek apakah teks input merupakan indikasi penolakan / pembatalan (rejection)
+   */
+  static isRejectionText(text: string): boolean {
+    if (!text) return false;
+    const clean = text.trim().toLowerCase().replace(/[.,!?;:]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!clean) return false;
+
+    // 1. Exact match kata atau frasa umum
+    const exactMatches = new Set([
+      'batal', 'tolak', 'tidak', 'ga jadi', 'gak jadi', 'nggak jadi', 'tidak jadi',
+      'batalin', 'batalkan', 'cancel', 'no', 't', 'jangan', 'skip', '0', 'reject',
+      'tolak saja', 'tolak draf', 'batal aja', 'batalin aja', 'batalkan draf',
+      'hapus draf', 'jangan disimpan', 'jangan dicatat', 'ga usah', 'gak usah',
+      'tolak ya', 'batal ya', 'batalkan ya'
+    ]);
+    if (exactMatches.has(clean)) return true;
+
+    // 2. Frasa penolakan diawali kata tolak/batal
+    const rejectionRegex = /^(batal|tolak|tidak|no|t|jangan|batalin|batalkan|skip|reject|cancel|hapus)(\s+(ya|monee|kak|kakak|dong|deh|aja|saja|draf|draft|transaksi|ini|itu|tersebut|min|disimpan|dicatat))+$/i;
+    if (rejectionRegex.test(clean)) return true;
+
+    // 3. Frasa "gak jadi / tidak jadi"
+    const cancelRegex = /^(g[a|a]k?\s*jadi|ngg[a|a]k?\s*jadi|tidak\s*jadi|g[a|a]k?\s*usah|ngg[a|a]k?\s*usah)(\s+(deh|aja|saja|ya|monee|kak|kakak|beli|catat|simpan|draf|draft|transaksi|ini|itu))*$/i;
+    if (cancelRegex.test(clean)) return true;
+
+    // 4. Frasa sopan penolakan
+    const politeRejectionRegex = /^(tolong|mohon)\s+(di)?(batal(kan|in)?|tolak|hapus)(\s+(ya|monee|kak|kakak|dong|deh|aja|saja|draf|draft|transaksi|ini|itu))*$/i;
+    if (politeRejectionRegex.test(clean)) return true;
+
+    return false;
+  }
+
+  /**
    * Proses respon dari user (Ya / Setuju / Tolak / Batal / Koreksi)
    */
   static async processResponse(
@@ -124,12 +189,8 @@ export class ApprovalEngine {
     }
 
     const cleanText = responseRaw.trim().toLowerCase();
-    const isApproval = [
-      'ya', 'setuju', 'oke', 'ok', 'yes', 'siap', '1', 'y', 'benar', 'betul', 'acc', 'lanjutkan', 'setujui', 'simpan', 'approve'
-    ].includes(cleanText);
-    const isRejection = [
-      'batal', 'tolak', 'tidak', 'ga jadi', 'gak jadi', 'batalin', 'cancel', 'no', 'jangan', 'skip', '0', 'reject', 'tolak saja', 'tolak draf'
-    ].includes(cleanText);
+    const isApproval = this.isApprovalText(cleanText);
+    const isRejection = this.isRejectionText(cleanText);
 
     if (isApproval) {
       const result = await this.executeAction(pending);
@@ -152,7 +213,7 @@ export class ApprovalEngine {
         message: `❌ Siap Kak, draf "${desc}"${submitter} berhasil DITOLAK/DIBATALKAN dan tidak Monee catat ke pembukuan. 🎀`,
       };
     } else {
-      // Input pengguna berupa koreksi teks
+      // Input pengguna berupa teks kalimat atau koreksi -> akan dianalisa lebih lanjut oleh LLM
       return {
         status: 'NEEDS_CORRECTION',
         message: cleanText,
@@ -178,9 +239,10 @@ export class ApprovalEngine {
 
     if (approved) {
       const result = await this.executeAction(pending);
+      const submitterInfo = pending.user?.name ? `\n👤 *Diajukan oleh:* Kak ${pending.user.name}` : '';
       return {
         status: 'APPROVED',
-        message: result.message,
+        message: `${result.message}${submitterInfo}`,
         alert: result.alert,
       };
     } else {
@@ -188,9 +250,12 @@ export class ApprovalEngine {
         where: { id: pending.id },
         data: { status: ActionStatus.REJECTED },
       });
+      const payload = (pending.proposedPayload as any) || {};
+      const desc = payload?.description || pending.summaryText || 'Transaksi';
+      const submitter = pending.user?.name ? ` (diajukan oleh Kak ${pending.user.name})` : '';
       return {
         status: 'REJECTED',
-        message: '❌ Transaksi berhasil dibatalkan dan tidak dicatat ke jurnal. 🎀',
+        message: `❌ Siap Kak, draf "${desc}"${submitter} berhasil DITOLAK/DIBATALKAN dan tidak Monee catat ke pembukuan. 🎀`,
       };
     }
   }

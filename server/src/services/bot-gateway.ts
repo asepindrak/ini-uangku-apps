@@ -18,7 +18,7 @@ import { ApprovalEngine } from './approval-engine.js';
 import { FinancialReportsService } from './financial-reports.js';
 import { TimezoneService } from './timezone-service.js';
 import { normalizeBaileysSender, normalizePhone } from '../utils/phone.js';
-import { ActionType, InputSource, TransactionType, BotChatPlatform, BotChatStatus } from '@prisma/client';
+import { ActionType, ActionStatus, InputSource, TransactionType, BotChatPlatform, BotChatStatus } from '@prisma/client';
 
 export class BotGateway {
   private static waSock: any = null;
@@ -1111,6 +1111,68 @@ export class BotGateway {
         });
         await this.sendWhatsAppMessage(replyJid, processed.replyText);
         return;
+      }
+
+      // 6.5 Cabang Persetujuan / Penolakan Draf Berdasarkan Pemahaman Bahasa Alami AI
+      if (processed.actionType === 'APPROVE_PENDING' || processed.actionType === 'REJECT_PENDING') {
+        const isApproved = processed.actionType === 'APPROVE_PENDING';
+        let targetPendingId = processed.targetPendingId;
+
+        // Validasi keberadaan targetPendingId
+        let targetAction: any = null;
+        if (targetPendingId && targetPendingId !== 'id-draf-terkait' && targetPendingId !== 'id-pending-action') {
+          targetAction = await prisma.pendingAction.findUnique({
+            where: { id: targetPendingId },
+            include: { user: true, family: true },
+          });
+        }
+
+        // Jika ID dari AI tidak ditemukan atau sudah selesai/kadaluarsa, ambil draf aktif untuk user/keluarga
+        if (!targetAction || targetAction.status !== ActionStatus.PENDING_APPROVAL) {
+          targetAction = await ApprovalEngine.getActivePendingAction(user.id, familyId);
+        }
+
+        if (!targetAction) {
+          const noDraftMsg = 'Saat ini tidak ada draf transaksi yang sedang menunggu persetujuan Monee, Kak. 🎀';
+          await this.logChatMessage({
+            familyId,
+            userId: user.id,
+            platform: BotChatPlatform.WHATSAPP,
+            senderIdentifier: phoneNumber,
+            senderName: user.name,
+            messageType: 'text',
+            rawContent: textContent || '[Persetujuan Draf]',
+            replyContent: noDraftMsg,
+            status: BotChatStatus.SUCCESS,
+          });
+          await this.sendWhatsAppMessage(replyJid, noDraftMsg);
+          return;
+        }
+
+        try {
+          const result = await ApprovalEngine.respondToPendingActionById(targetAction.id, isApproved);
+          let replyMsg = result.message;
+          if (result.alert) replyMsg += `\n\n${result.alert}`;
+
+          await this.logChatMessage({
+            familyId,
+            userId: user.id,
+            platform: BotChatPlatform.WHATSAPP,
+            senderIdentifier: phoneNumber,
+            senderName: user.name,
+            messageType: 'text',
+            rawContent: textContent || (isApproved ? 'Setujui draf' : 'Tolak draf'),
+            replyContent: replyMsg,
+            status: BotChatStatus.SUCCESS,
+            metadata: { pendingActionId: targetAction.id, status: result.status },
+          });
+          await this.sendWhatsAppMessage(replyJid, replyMsg);
+          return;
+        } catch (err: any) {
+          const errMsg = `Mohon maaf Kak, ${err?.message || 'terjadi kendala saat memproses persetujuan draf'}. 🎀`;
+          await this.sendWhatsAppMessage(replyJid, errMsg);
+          return;
+        }
       }
 
       // 7. Cabang berdasarkan Action Type Manajemen Keuangan:

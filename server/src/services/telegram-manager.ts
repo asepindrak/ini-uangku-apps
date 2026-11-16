@@ -663,6 +663,40 @@ export class TelegramManager {
       return;
     }
 
+    // 7.5 Cabang Persetujuan / Penolakan Draf Berdasarkan Pemahaman Bahasa Alami AI
+    if (processed.actionType === 'APPROVE_PENDING' || processed.actionType === 'REJECT_PENDING') {
+      const isApproved = processed.actionType === 'APPROVE_PENDING';
+      let targetPendingId = processed.targetPendingId;
+
+      let targetAction: any = null;
+      if (targetPendingId && targetPendingId !== 'id-draf-terkait' && targetPendingId !== 'id-pending-action') {
+        targetAction = await prisma.pendingAction.findUnique({
+          where: { id: targetPendingId },
+          include: { user: true, family: true },
+        });
+      }
+
+      if (!targetAction || targetAction.status !== ActionStatus.PENDING_APPROVAL) {
+        targetAction = await ApprovalEngine.getActivePendingAction(user.id, familyId);
+      }
+
+      if (!targetAction) {
+        await ctx.reply('Saat ini tidak ada draf transaksi yang sedang menunggu persetujuan Monee, Kak. 🎀', { parse_mode: 'Markdown' });
+        return;
+      }
+
+      try {
+        const result = await ApprovalEngine.respondToPendingActionById(targetAction.id, isApproved);
+        let replyMsg = result.message;
+        if (result.alert) replyMsg += `\n\n${result.alert}`;
+        await ctx.reply(replyMsg, { parse_mode: 'Markdown' });
+        return;
+      } catch (err: any) {
+        await ctx.reply(`Mohon maaf Kak, ${err?.message || 'terjadi kendala saat memproses persetujuan draf'}. 🎀`, { parse_mode: 'Markdown' });
+        return;
+      }
+    }
+
     // 8. Helper pembuatan draf dengan tombol InlineKeyboard interaktif
     const sendDraftWithButtons = async (
       actionType: ActionType,
