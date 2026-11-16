@@ -592,21 +592,37 @@ export class BotGateway {
     user?: any,
     msg?: proto.IWebMessageInfo
   ): string {
-    // 1. Selalu balas langsung ke thread pesan masuk (baik itu @lid maupun @s.whatsapp.net)
-    if (cleanJid) {
-      return cleanJid;
+    // 1. Prioritaskan Phone Number JID (@s.whatsapp.net) jika user terdaftar!
+    // Ini krusial agar balasan langsung terdekripsi tanpa stuck "Menunggu pesan ini".
+    if (user?.whatsappJid && user.whatsappJid.endsWith('@s.whatsapp.net')) {
+      return user.whatsappJid;
     }
-    if (msg?.key?.remoteJid) {
-      return msg.key.remoteJid;
-    }
-    // 2. Jika tidak ada remoteJid (misalnya notifikasi mandiri): prioritaskan LID jika ada
     if (user?.whatsappNumber) {
-      const mappedLid = this.jidToLidMap.get(user.whatsappNumber);
-      if (mappedLid) return mappedLid;
       const norm = normalizePhone(user.whatsappNumber);
       if (norm.whatsappJid) return norm.whatsappJid;
     }
-    return cleanJid;
+
+    // 2. Jika cleanJid adalah @lid, coba cari pemetaan nomor HP di lidToJidMap
+    if (cleanJid?.endsWith('@lid')) {
+      const rawLid = cleanJid.split('@')[0]?.split(':')[0];
+      const mappedPn = this.lidToJidMap.get(cleanJid) || this.lidToJidMap.get(rawLid);
+      if (mappedPn && !mappedPn.endsWith('@lid')) {
+        return mappedPn.endsWith('@s.whatsapp.net') ? mappedPn : `${mappedPn}@s.whatsapp.net`;
+      }
+    }
+
+    // 3. Jika cleanJid adalah nomor HP (@s.whatsapp.net), gunakan langsung
+    if (cleanJid?.endsWith('@s.whatsapp.net')) {
+      return cleanJid;
+    }
+
+    // 4. Cek remoteJid jika berakhiran @s.whatsapp.net
+    if (msg?.key?.remoteJid?.endsWith('@s.whatsapp.net')) {
+      return msg.key.remoteJid.split(':')[0] + '@s.whatsapp.net';
+    }
+
+    // 5. Fallback ke cleanJid jika tidak ada data nomor HP
+    return cleanJid || msg?.key?.remoteJid || '';
   }
 
   /**
@@ -1567,44 +1583,60 @@ export class BotGateway {
       ? jid.split(':')[0] + '@' + jid.split('@')[1]
       : `${jid}@s.whatsapp.net`;
 
-    // Prioritaskan LID jika target adalah nomor HP (@s.whatsapp.net) dan kita tahu mapped LID-nya
+    // PRIORITASKAN PHONE NUMBER JID (@s.whatsapp.net)
+    // Pengiriman ke nomor HP adalah standar protokol WhatsApp & mencegah 'Menunggu pesan ini'.
     let altTarget: string | null = null;
-    if (target.endsWith('@s.whatsapp.net')) {
-      const rawPn = target.split('@')[0]?.split(':')[0];
-      const mappedLid = this.jidToLidMap.get(target) || this.jidToLidMap.get(rawPn);
-      if (mappedLid && mappedLid.endsWith('@lid')) {
-        altTarget = target; // fallback ke PN jika LID gagal
-        target = mappedLid; // prioritaskan kirim ke LID aktif!
-      }
-    } else if (target.endsWith('@lid')) {
+    if (target.endsWith('@lid')) {
       const rawLid = target.split('@')[0]?.split(':')[0];
       const mappedPn = this.lidToJidMap.get(target) || this.lidToJidMap.get(rawLid);
       if (mappedPn && !mappedPn.endsWith('@lid')) {
-        altTarget = mappedPn.endsWith('@s.whatsapp.net') ? mappedPn : `${mappedPn}@s.whatsapp.net`;
+        altTarget = target; // fallback ke LID jika nomor HP gagal
+        target = mappedPn.endsWith('@s.whatsapp.net') ? mappedPn : `${mappedPn}@s.whatsapp.net`;
+      }
+    } else if (target.endsWith('@s.whatsapp.net')) {
+      // Jika target adalah nomor HP, biarkan target tetap nomor HP!
+      const rawPn = target.split('@')[0]?.split(':')[0];
+      const mappedLid = this.jidToLidMap.get(target) || this.jidToLidMap.get(rawPn);
+      if (mappedLid && mappedLid.endsWith('@lid')) {
+        altTarget = mappedLid; // hanya sebagai fallback sekunder
       }
     }
 
     const msgPayload: any = { text };
     const sendOptions: any = {};
     if (options?.quoted) {
-      sendOptions.quoted = options.quoted;
+      // Sanitasi quoted: pastikan remoteJid pada quoted message sinkron dengan target
+      const quoted = { ...options.quoted };
+      if (quoted.key) {
+        quoted.key = {
+          ...quoted.key,
+          remoteJid: target,
+        };
+      }
+      sendOptions.quoted = quoted;
     }
 
-    // Helper untuk mengirim pesan dengan batas waktu aman 12 detik
-    const sendWithTimeout = async (toJid: string) => {
+    // Helper untuk mengirim pesan dengan batas waktu aman 12 detik dan auto-retry tanpa quoted jika gagal
+    const sendWithTimeout = async (toJid: string, useQuoted: boolean = true) => {
+      const currentOpts = useQuoted ? sendOptions : {};
       let timer: NodeJS.Timeout;
       const timeoutPromise = new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error(`Timeout 12s mengirim ke ${toJid}`)), 12000);
       });
       try {
         const res = await Promise.race([
-          this.waSock!.sendMessage(toJid, msgPayload, sendOptions),
+          this.waSock!.sendMessage(toJid, msgPayload, currentOpts),
           timeoutPromise,
         ]);
         clearTimeout(timer!);
         return res;
-      } catch (e) {
+      } catch (e: any) {
         clearTimeout(timer!);
+        // Jika gagal karena quoted context mismatch, coba ulang tanpa quoted!
+        if (useQuoted && sendOptions.quoted) {
+          console.warn(`[WA Gateway] Gagal kirim dengan quoted ke ${toJid} (${e?.message}), mencoba ulang tanpa quoted...`);
+          return this.waSock!.sendMessage(toJid, msgPayload, {});
+        }
         throw e;
       }
     };
