@@ -129,7 +129,7 @@ export class BotGateway {
               }
             }
           }
-        } catch (_) {}
+        } catch (_) { }
       }
     } catch (err) {
       console.warn('[WA Gateway] syncFamilyLids warning:', err);
@@ -159,7 +159,7 @@ export class BotGateway {
         this.waSock.ev.removeAllListeners('messages.upsert');
         this.waSock.ev.removeAllListeners('creds.update');
         this.waSock.end(undefined);
-      } catch (_) {}
+      } catch (_) { }
       this.waSock = null;
     }
 
@@ -197,7 +197,7 @@ export class BotGateway {
               };
             }
           }
-        } catch (_) {}
+        } catch (_) { }
         return proto.Message.fromObject({});
       },
     });
@@ -267,7 +267,7 @@ export class BotGateway {
         if (!msg.message) continue;
         // Abaikan pesan yang baru saja dikirim oleh bot Monee sendiri
         if (msg.key.id && this.sentMessageIds.has(msg.key.id)) continue;
-        
+
         const remoteJid = msg.key.remoteJid;
         if (!remoteJid) continue;
 
@@ -418,7 +418,7 @@ export class BotGateway {
                 name: userByPn.name,
               },
             });
-          } catch (_) {}
+          } catch (_) { }
           return userByPn;
         }
       }
@@ -540,7 +540,7 @@ export class BotGateway {
                 return cand;
               }
             }
-          } catch (_) {}
+          } catch (_) { }
         }
       } catch (err) {
         console.warn('[WA Gateway] USync lookup warning:', err);
@@ -582,7 +582,7 @@ export class BotGateway {
                 name: `${matchedUser.name} (${pushNameStr})`,
               },
             });
-          } catch (_) {}
+          } catch (_) { }
           return matchedUser;
         }
       }
@@ -601,36 +601,24 @@ export class BotGateway {
     user?: any,
     msg?: proto.IWebMessageInfo
   ): string {
-    // 1. Prioritaskan Phone Number JID (@s.whatsapp.net) jika user terdaftar!
-    // Ini krusial agar balasan langsung terdekripsi tanpa stuck "Menunggu pesan ini".
-    if (user?.whatsappJid && user.whatsappJid.endsWith('@s.whatsapp.net')) {
-      return user.whatsappJid;
+    // 1. Selalu balas langsung ke thread tempat pesan masuk (cleanJid / remoteJid)
+    // Ini mutlak diperlukan agar pesan langsung mendarat di layar chat yang sedang dibuka
+    // (misalnya WhatsApp Web di thread @lid atau WhatsApp Mobile di thread @s.whatsapp.net).
+    if (cleanJid) {
+      return cleanJid;
     }
+    if (msg?.key?.remoteJid) {
+      return msg.key.remoteJid;
+    }
+
+    // 2. Jika tidak ada remoteJid (misalnya notifikasi mandiri / laporan terjadwal):
     if (user?.whatsappNumber) {
+      const mappedLid = this.jidToLidMap.get(user.whatsappNumber);
+      if (mappedLid) return mappedLid;
       const norm = normalizePhone(user.whatsappNumber);
       if (norm.whatsappJid) return norm.whatsappJid;
     }
 
-    // 2. Jika cleanJid adalah @lid, coba cari pemetaan nomor HP di lidToJidMap
-    if (cleanJid?.endsWith('@lid')) {
-      const rawLid = cleanJid.split('@')[0]?.split(':')[0];
-      const mappedPn = this.lidToJidMap.get(cleanJid) || this.lidToJidMap.get(rawLid);
-      if (mappedPn && !mappedPn.endsWith('@lid')) {
-        return mappedPn.endsWith('@s.whatsapp.net') ? mappedPn : `${mappedPn}@s.whatsapp.net`;
-      }
-    }
-
-    // 3. Jika cleanJid adalah nomor HP (@s.whatsapp.net), gunakan langsung
-    if (cleanJid?.endsWith('@s.whatsapp.net')) {
-      return cleanJid;
-    }
-
-    // 4. Cek remoteJid jika berakhiran @s.whatsapp.net
-    if (msg?.key?.remoteJid?.endsWith('@s.whatsapp.net')) {
-      return msg.key.remoteJid.split(':')[0] + '@s.whatsapp.net';
-    }
-
-    // 5. Fallback ke cleanJid jika tidak ada data nomor HP
     return cleanJid || msg?.key?.remoteJid || '';
   }
 
@@ -727,7 +715,7 @@ export class BotGateway {
             status: BotChatStatus.SUCCESS,
             metadata: { pendingActionId: activePending.id, status: response.status },
           });
-          await this.sendWhatsAppMessage(replyJid, replyMsg, { quoted: msg });
+          await this.sendWhatsAppMessage(replyJid, replyMsg);
           return;
         }
       }
@@ -863,699 +851,699 @@ export class BotGateway {
         return;
       }
 
-    // 3. Konteks Waktu & Agregasi Temporal Finansial Keluarga (Berdasarkan Timezone Keluarga)
-    const tz = await TimezoneService.getFamilyTimezone(familyId);
-    const bounds = TimezoneService.getTimezoneBounds(tz);
+      // 3. Konteks Waktu & Agregasi Temporal Finansial Keluarga (Berdasarkan Timezone Keluarga)
+      const tz = await TimezoneService.getFamilyTimezone(familyId);
+      const bounds = TimezoneService.getTimezoneBounds(tz);
 
-    const currentDateIso = bounds.todayIso;
-    const currentDateTimeFormatted = bounds.nowFormatted;
+      const currentDateIso = bounds.todayIso;
+      const currentDateTimeFormatted = bounds.nowFormatted;
 
-    const startOfToday = bounds.startOfToday;
-    const startOfYesterday = bounds.startOfYesterday;
-    const endOfYesterday = bounds.endOfYesterday;
-    const startOfThisMonth = bounds.startOfThisMonth;
-    const startOfLastMonth = bounds.startOfLastMonth;
-    const endOfLastMonth = bounds.endOfLastMonth;
-    const startOfThisYear = bounds.startOfThisYear;
+      const startOfToday = bounds.startOfToday;
+      const startOfYesterday = bounds.startOfYesterday;
+      const endOfYesterday = bounds.endOfYesterday;
+      const startOfThisMonth = bounds.startOfThisMonth;
+      const startOfLastMonth = bounds.startOfLastMonth;
+      const endOfLastMonth = bounds.endOfLastMonth;
+      const startOfThisYear = bounds.startOfThisYear;
 
-    const [
-      wallets,
-      categories,
-      recentTransactions,
-      todayAgg,
-      yesterdayAgg,
-      thisMonthAgg,
-      lastMonthAgg,
-      thisYearAgg,
-      sinkingFunds,
-    ] = await Promise.all([
-      prisma.wallet.findMany({
-        where: { familyId },
-        select: { id: true, name: true, type: true, balance: true, isDefaultExpense: true },
-      }),
-      prisma.category.findMany({
-        where: { familyId },
-        select: { id: true, name: true, monthlyBudget: true, alertThreshold: true },
-      }),
-      prisma.transaction.findMany({
-        where: { familyId },
-        orderBy: { transactionDate: 'desc' },
-        take: 35,
-        include: {
-          wallet: { select: { name: true } },
-          category: { select: { name: true } },
-          user: { select: { name: true } },
-        },
-      }),
-      // Hari ini
-      prisma.transaction.groupBy({
-        by: ['type'],
-        where: { familyId, transactionDate: { gte: startOfToday } },
-        _sum: { amount: true },
-      }),
-      // Kemarin
-      prisma.transaction.groupBy({
-        by: ['type'],
-        where: { familyId, transactionDate: { gte: startOfYesterday, lt: startOfToday } },
-        _sum: { amount: true },
-      }),
-      // Bulan ini
-      prisma.transaction.groupBy({
-        by: ['type'],
-        where: { familyId, transactionDate: { gte: startOfThisMonth } },
-        _sum: { amount: true },
-      }),
-      // Bulan lalu
-      prisma.transaction.groupBy({
-        by: ['type'],
-        where: { familyId, transactionDate: { gte: startOfLastMonth, lte: endOfLastMonth } },
-        _sum: { amount: true },
-      }),
-      // Tahun ini
-      prisma.transaction.groupBy({
-        by: ['type'],
-        where: { familyId, transactionDate: { gte: startOfThisYear } },
-        _sum: { amount: true },
-      }),
-      prisma.sinkingFund.findMany({
-        where: { familyId, isActive: true },
-        select: { name: true, currentAmount: true, targetAmount: true },
-      }),
-    ]);
+      const [
+        wallets,
+        categories,
+        recentTransactions,
+        todayAgg,
+        yesterdayAgg,
+        thisMonthAgg,
+        lastMonthAgg,
+        thisYearAgg,
+        sinkingFunds,
+      ] = await Promise.all([
+        prisma.wallet.findMany({
+          where: { familyId },
+          select: { id: true, name: true, type: true, balance: true, isDefaultExpense: true },
+        }),
+        prisma.category.findMany({
+          where: { familyId },
+          select: { id: true, name: true, monthlyBudget: true, alertThreshold: true },
+        }),
+        prisma.transaction.findMany({
+          where: { familyId },
+          orderBy: { transactionDate: 'desc' },
+          take: 35,
+          include: {
+            wallet: { select: { name: true } },
+            category: { select: { name: true } },
+            user: { select: { name: true } },
+          },
+        }),
+        // Hari ini
+        prisma.transaction.groupBy({
+          by: ['type'],
+          where: { familyId, transactionDate: { gte: startOfToday } },
+          _sum: { amount: true },
+        }),
+        // Kemarin
+        prisma.transaction.groupBy({
+          by: ['type'],
+          where: { familyId, transactionDate: { gte: startOfYesterday, lt: startOfToday } },
+          _sum: { amount: true },
+        }),
+        // Bulan ini
+        prisma.transaction.groupBy({
+          by: ['type'],
+          where: { familyId, transactionDate: { gte: startOfThisMonth } },
+          _sum: { amount: true },
+        }),
+        // Bulan lalu
+        prisma.transaction.groupBy({
+          by: ['type'],
+          where: { familyId, transactionDate: { gte: startOfLastMonth, lte: endOfLastMonth } },
+          _sum: { amount: true },
+        }),
+        // Tahun ini
+        prisma.transaction.groupBy({
+          by: ['type'],
+          where: { familyId, transactionDate: { gte: startOfThisYear } },
+          _sum: { amount: true },
+        }),
+        prisma.sinkingFund.findMany({
+          where: { familyId, isActive: true },
+          select: { name: true, currentAmount: true, targetAmount: true },
+        }),
+      ]);
 
-    const getSums = (aggList: any[]) => {
-      let expense = 0;
-      let income = 0;
-      for (const g of aggList) {
-        const sum = Number(g._sum.amount) || 0;
-        if (g.type === 'EXPENSE') expense += sum;
-        if (g.type === 'INCOME') income += sum;
-      }
-      return { expense, income };
-    };
-
-    const todaySums = getSums(todayAgg);
-    const yesterdaySums = getSums(yesterdayAgg);
-    const thisMonthSums = getSums(thisMonthAgg);
-    const lastMonthSums = getSums(lastMonthAgg);
-    const thisYearSums = getSums(thisYearAgg);
-
-    const formattedRecent = recentTransactions.map((t) => {
-      const d = new Date(t.transactionDate);
-      const isToday = d.getTime() >= startOfToday.getTime() && d.getTime() <= bounds.endOfToday.getTime();
-      const isYesterday = d.getTime() >= startOfYesterday.getTime() && d.getTime() < startOfToday.getTime();
-      const relLabel = isToday ? 'Hari Ini' : isYesterday ? 'Kemarin' : TimezoneService.formatDate(d, tz, { day: 'numeric', month: 'short' });
-
-      return {
-        id: t.id,
-        description: t.description,
-        amount: Number(t.amount),
-        type: t.type,
-        date: d.toISOString().split('T')[0],
-        time: TimezoneService.formatTime(d, tz),
-        label: relLabel,
-        walletName: t.wallet?.name || 'Dompet',
-        categoryName: t.category?.name || 'Umum',
-        userName: t.user?.name || 'Anggota',
+      const getSums = (aggList: any[]) => {
+        let expense = 0;
+        let income = 0;
+        for (const g of aggList) {
+          const sum = Number(g._sum.amount) || 0;
+          if (g.type === 'EXPENSE') expense += sum;
+          if (g.type === 'INCOME') income += sum;
+        }
+        return { expense, income };
       };
-    });
 
-    const formattedSinking = sinkingFunds.map((s) => ({
-      name: s.name,
-      currentAmount: Number(s.currentAmount),
-      targetAmount: Number(s.targetAmount),
-    }));
+      const todaySums = getSums(todayAgg);
+      const yesterdaySums = getSums(yesterdayAgg);
+      const thisMonthSums = getSums(thisMonthAgg);
+      const lastMonthSums = getSums(lastMonthAgg);
+      const thisYearSums = getSums(thisYearAgg);
 
-    let imageBase64: string | undefined = undefined;
-    let audioBase64: string | undefined = undefined;
+      const formattedRecent = recentTransactions.map((t) => {
+        const d = new Date(t.transactionDate);
+        const isToday = d.getTime() >= startOfToday.getTime() && d.getTime() <= bounds.endOfToday.getTime();
+        const isYesterday = d.getTime() >= startOfYesterday.getTime() && d.getTime() < startOfToday.getTime();
+        const relLabel = isToday ? 'Hari Ini' : isYesterday ? 'Kemarin' : TimezoneService.formatDate(d, tz, { day: 'numeric', month: 'short' });
 
-    // 4. Handle Media (Foto Nota / Tulisan Tangan Kertas / Voice Note)
-    if (msgType === 'imageMessage') {
-      await this.sendWhatsAppMessage(replyJid, '🔍 Sedang membaca foto nota / tulisan tangan Anda dengan AI...');
-      try {
-        const rawBuffer = await downloadMediaMessage(msg, 'buffer', {});
-        // Kompres dan optimasi resolusi struk (maksimal 1024x1024) agar ringan dan cepat diproses AI
+        return {
+          id: t.id,
+          description: t.description,
+          amount: Number(t.amount),
+          type: t.type,
+          date: d.toISOString().split('T')[0],
+          time: TimezoneService.formatTime(d, tz),
+          label: relLabel,
+          walletName: t.wallet?.name || 'Dompet',
+          categoryName: t.category?.name || 'Umum',
+          userName: t.user?.name || 'Anggota',
+        };
+      });
+
+      const formattedSinking = sinkingFunds.map((s) => ({
+        name: s.name,
+        currentAmount: Number(s.currentAmount),
+        targetAmount: Number(s.targetAmount),
+      }));
+
+      let imageBase64: string | undefined = undefined;
+      let audioBase64: string | undefined = undefined;
+
+      // 4. Handle Media (Foto Nota / Tulisan Tangan Kertas / Voice Note)
+      if (msgType === 'imageMessage') {
+        await this.sendWhatsAppMessage(replyJid, '🔍 Sedang membaca foto nota / tulisan tangan Anda dengan AI...');
         try {
-          const compressed = await sharp(rawBuffer)
-            .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
-            .jpeg({ quality: 75 })
-            .toBuffer();
-          imageBase64 = compressed.toString('base64');
-        } catch (compErr) {
-          console.warn('[WA Gateway] Kompresi sharp gagal, menggunakan buffer asli:', compErr);
-          imageBase64 = rawBuffer.toString('base64');
+          const rawBuffer = await downloadMediaMessage(msg, 'buffer', {});
+          // Kompres dan optimasi resolusi struk (maksimal 1024x1024) agar ringan dan cepat diproses AI
+          try {
+            const compressed = await sharp(rawBuffer)
+              .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+              .jpeg({ quality: 75 })
+              .toBuffer();
+            imageBase64 = compressed.toString('base64');
+          } catch (compErr) {
+            console.warn('[WA Gateway] Kompresi sharp gagal, menggunakan buffer asli:', compErr);
+            imageBase64 = rawBuffer.toString('base64');
+          }
+        } catch (err: any) {
+          console.error('Gagal mengunduh gambar WA:', err?.message || err);
         }
-      } catch (err: any) {
-        console.error('Gagal mengunduh gambar WA:', err?.message || err);
+      } else if (msgType === 'audioMessage') {
+        await this.sendWhatsAppMessage(replyJid, '🎙️ Sedang mendengarkan rekaman suara Anda...');
+        try {
+          const buffer = await downloadMediaMessage(msg, 'buffer', {});
+          audioBase64 = buffer.toString('base64');
+        } catch (err) {
+          console.error('Gagal mengunduh audio WA:', err);
+        }
       }
-    } else if (msgType === 'audioMessage') {
-      await this.sendWhatsAppMessage(replyJid, '🎙️ Sedang mendengarkan rekaman suara Anda...');
-      try {
-        const buffer = await downloadMediaMessage(msg, 'buffer', {});
-        audioBase64 = buffer.toString('base64');
-      } catch (err) {
-        console.error('Gagal mengunduh audio WA:', err);
+
+      if (!textContent && !imageBase64 && !audioBase64) return;
+
+      // 5. Analisa Cerdas dengan AI (Kesadaran Waktu, CRUD Transaksi & Manajemen Finansial Lengkap)
+      const processed = await LLMProviderService.processMessage({
+        familyId,
+        currentDateIso,
+        currentDateTimeFormatted,
+        rawText: textContent,
+        imageBase64,
+        imageMimeType: 'image/jpeg',
+        audioBase64,
+        audioMimeType: 'audio/ogg',
+        contextWallets: wallets.map((w) => ({
+          id: w.id,
+          name: w.name,
+          type: w.type,
+          balance: Number(w.balance),
+          isDefaultExpense: !!w.isDefaultExpense,
+        })),
+        contextCategories: categories.map((c) => ({
+          id: c.id,
+          name: c.name,
+          monthlyBudget: c.monthlyBudget ? Number(c.monthlyBudget) : undefined,
+          alertThreshold: c.alertThreshold ? Number(c.alertThreshold) : undefined,
+        })),
+        recentTransactions: formattedRecent,
+        timeAggregations: {
+          todayExpense: todaySums.expense,
+          todayIncome: todaySums.income,
+          yesterdayExpense: yesterdaySums.expense,
+          yesterdayIncome: yesterdaySums.income,
+          thisMonthExpense: thisMonthSums.expense,
+          thisMonthIncome: thisMonthSums.income,
+          lastMonthExpense: lastMonthSums.expense,
+          lastMonthIncome: lastMonthSums.income,
+          thisYearExpense: thisYearSums.expense,
+          thisYearIncome: thisYearSums.income,
+        },
+        monthlySummary: {
+          totalExpense: thisMonthSums.expense,
+          totalIncome: thisMonthSums.income,
+          netBalance: thisMonthSums.income - thisMonthSums.expense,
+        },
+        sinkingFunds: formattedSinking,
+      });
+
+      // 6. Jika berupa Pertanyaan / Konsultasi Finansial
+      if (processed.intent === 'FINANCIAL_CONSULTATION' && processed.replyText) {
+        await this.logChatMessage({
+          familyId,
+          userId: user.id,
+          platform: BotChatPlatform.WHATSAPP,
+          senderIdentifier: phoneNumber,
+          senderName: user.name,
+          messageType: 'text',
+          rawContent: textContent || '[Konsultasi Finansial]',
+          replyContent: processed.replyText,
+          status: BotChatStatus.CONSULTATION,
+        });
+        await this.sendWhatsAppMessage(replyJid, processed.replyText);
+        return;
       }
-    }
 
-    if (!textContent && !imageBase64 && !audioBase64) return;
+      // 7. Cabang berdasarkan Action Type Manajemen Keuangan:
+      if (processed.actionType === 'UPDATE_TRANSACTION') {
+        const summaryText =
+          `📋 *Draf Pembaruan (Edit) Transaksi:*\n` +
+          `${processed.summaryMessage || `• Ubah: ${processed.targetDescription}\n• Nominal Baru: Rp ${(processed.newAmount || 0).toLocaleString('id-ID')}`}\n\n` +
+          `👉 *Balas "Ya" untuk menyetujui pembaruan transaksi ini, atau ketik koreksi Anda.*`;
 
-    // 5. Analisa Cerdas dengan AI (Kesadaran Waktu, CRUD Transaksi & Manajemen Finansial Lengkap)
-    const processed = await LLMProviderService.processMessage({
-      familyId,
-      currentDateIso,
-      currentDateTimeFormatted,
-      rawText: textContent,
-      imageBase64,
-      imageMimeType: 'image/jpeg',
-      audioBase64,
-      audioMimeType: 'audio/ogg',
-      contextWallets: wallets.map((w) => ({
-        id: w.id,
-        name: w.name,
-        type: w.type,
-        balance: Number(w.balance),
-        isDefaultExpense: !!w.isDefaultExpense,
-      })),
-      contextCategories: categories.map((c) => ({
-        id: c.id,
-        name: c.name,
-        monthlyBudget: c.monthlyBudget ? Number(c.monthlyBudget) : undefined,
-        alertThreshold: c.alertThreshold ? Number(c.alertThreshold) : undefined,
-      })),
-      recentTransactions: formattedRecent,
-      timeAggregations: {
-        todayExpense: todaySums.expense,
-        todayIncome: todaySums.income,
-        yesterdayExpense: yesterdaySums.expense,
-        yesterdayIncome: yesterdaySums.income,
-        thisMonthExpense: thisMonthSums.expense,
-        thisMonthIncome: thisMonthSums.income,
-        lastMonthExpense: lastMonthSums.expense,
-        lastMonthIncome: lastMonthSums.income,
-        thisYearExpense: thisYearSums.expense,
-        thisYearIncome: thisYearSums.income,
-      },
-      monthlySummary: {
-        totalExpense: thisMonthSums.expense,
-        totalIncome: thisMonthSums.income,
-        netBalance: thisMonthSums.income - thisMonthSums.expense,
-      },
-      sinkingFunds: formattedSinking,
-    });
+        await ApprovalEngine.createPendingAction(
+          familyId,
+          user.id,
+          ActionType.UPDATE_TRANSACTION,
+          {
+            targetTransactionId: processed.targetTransactionId,
+            targetDescription: processed.targetDescription,
+            newAmount: processed.newAmount,
+            newDescription: processed.newDescription,
+            newDate: processed.newDate,
+            newWalletId: processed.newWalletId,
+            newCategoryId: processed.newCategoryId,
+          },
+          summaryText
+        );
+        await this.logChatMessage({
+          familyId,
+          userId: user.id,
+          platform: BotChatPlatform.WHATSAPP,
+          senderIdentifier: phoneNumber,
+          senderName: user.name,
+          messageType: 'text',
+          rawContent: textContent,
+          replyContent: summaryText,
+          status: BotChatStatus.PENDING_APPROVAL,
+          metadata: { actionType: 'UPDATE_TRANSACTION', target: processed.targetDescription },
+        });
+        await this.sendWhatsAppMessage(replyJid, summaryText);
+        return;
+      }
 
-    // 6. Jika berupa Pertanyaan / Konsultasi Finansial
-    if (processed.intent === 'FINANCIAL_CONSULTATION' && processed.replyText) {
-      await this.logChatMessage({
-        familyId,
-        userId: user.id,
-        platform: BotChatPlatform.WHATSAPP,
-        senderIdentifier: phoneNumber,
-        senderName: user.name,
-        messageType: 'text',
-        rawContent: textContent || '[Konsultasi Finansial]',
-        replyContent: processed.replyText,
-        status: BotChatStatus.CONSULTATION,
-      });
-      await this.sendWhatsAppMessage(replyJid, processed.replyText, { quoted: msg });
-      return;
-    }
+      if (processed.actionType === 'DELETE_TRANSACTION') {
+        const summaryText =
+          `📋 *Draf Penghapusan Transaksi:*\n` +
+          `${processed.summaryMessage || `• Hapus Transaksi: ${processed.targetDescription}`}\n\n` +
+          `👉 *Balas "Ya" untuk menyetujui penghapusan transaksi ini dan memulihkan saldo dompet.*`;
 
-    // 7. Cabang berdasarkan Action Type Manajemen Keuangan:
-    if (processed.actionType === 'UPDATE_TRANSACTION') {
-      const summaryText =
-        `📋 *Draf Pembaruan (Edit) Transaksi:*\n` +
-        `${processed.summaryMessage || `• Ubah: ${processed.targetDescription}\n• Nominal Baru: Rp ${(processed.newAmount || 0).toLocaleString('id-ID')}`}\n\n` +
-        `👉 *Balas "Ya" untuk menyetujui pembaruan transaksi ini, atau ketik koreksi Anda.*`;
+        await ApprovalEngine.createPendingAction(
+          familyId,
+          user.id,
+          ActionType.DELETE_TRANSACTION,
+          {
+            targetTransactionId: processed.targetTransactionId,
+            targetDescription: processed.targetDescription,
+          },
+          summaryText
+        );
+        await this.logChatMessage({
+          familyId,
+          userId: user.id,
+          platform: BotChatPlatform.WHATSAPP,
+          senderIdentifier: phoneNumber,
+          senderName: user.name,
+          messageType: 'text',
+          rawContent: textContent,
+          replyContent: summaryText,
+          status: BotChatStatus.PENDING_APPROVAL,
+          metadata: { actionType: 'DELETE_TRANSACTION', target: processed.targetDescription },
+        });
+        await this.sendWhatsAppMessage(replyJid, summaryText);
+        return;
+      }
 
-      await ApprovalEngine.createPendingAction(
-        familyId,
-        user.id,
-        ActionType.UPDATE_TRANSACTION,
-        {
-          targetTransactionId: processed.targetTransactionId,
-          targetDescription: processed.targetDescription,
-          newAmount: processed.newAmount,
-          newDescription: processed.newDescription,
-          newDate: processed.newDate,
-          newWalletId: processed.newWalletId,
-          newCategoryId: processed.newCategoryId,
-        },
-        summaryText
-      );
-      await this.logChatMessage({
-        familyId,
-        userId: user.id,
-        platform: BotChatPlatform.WHATSAPP,
-        senderIdentifier: phoneNumber,
-        senderName: user.name,
-        messageType: 'text',
-        rawContent: textContent,
-        replyContent: summaryText,
-        status: BotChatStatus.PENDING_APPROVAL,
-        metadata: { actionType: 'UPDATE_TRANSACTION', target: processed.targetDescription },
-      });
-      await this.sendWhatsAppMessage(replyJid, summaryText, { quoted: msg });
-      return;
-    }
+      if (processed.actionType === 'CREATE_WALLET') {
+        const hasBatchWallets = Array.isArray(processed.wallets) && processed.wallets.length > 0;
+        const hasBatchCategories = Array.isArray(processed.categories) && processed.categories.length > 0;
 
-    if (processed.actionType === 'DELETE_TRANSACTION') {
-      const summaryText =
-        `📋 *Draf Penghapusan Transaksi:*\n` +
-        `${processed.summaryMessage || `• Hapus Transaksi: ${processed.targetDescription}`}\n\n` +
-        `👉 *Balas "Ya" untuk menyetujui penghapusan transaksi ini dan memulihkan saldo dompet.*`;
-
-      await ApprovalEngine.createPendingAction(
-        familyId,
-        user.id,
-        ActionType.DELETE_TRANSACTION,
-        {
-          targetTransactionId: processed.targetTransactionId,
-          targetDescription: processed.targetDescription,
-        },
-        summaryText
-      );
-      await this.logChatMessage({
-        familyId,
-        userId: user.id,
-        platform: BotChatPlatform.WHATSAPP,
-        senderIdentifier: phoneNumber,
-        senderName: user.name,
-        messageType: 'text',
-        rawContent: textContent,
-        replyContent: summaryText,
-        status: BotChatStatus.PENDING_APPROVAL,
-        metadata: { actionType: 'DELETE_TRANSACTION', target: processed.targetDescription },
-      });
-      await this.sendWhatsAppMessage(replyJid, summaryText, { quoted: msg });
-      return;
-    }
-
-    if (processed.actionType === 'CREATE_WALLET') {
-      const hasBatchWallets = Array.isArray(processed.wallets) && processed.wallets.length > 0;
-      const hasBatchCategories = Array.isArray(processed.categories) && processed.categories.length > 0;
-
-      let summaryText = '';
-      if (hasBatchWallets || hasBatchCategories) {
-        summaryText = `📋 *Draf Penambahan Pos Keuangan:*\n`;
-        if (hasBatchWallets) {
-          summaryText += `\n💳 *Dompet Baru (${processed.wallets!.length}):*\n`;
-          processed.wallets!.forEach((w, i) => {
-            summaryText += `${i + 1}. ${w.name} (${w.type || 'CASH'} - Saldo: Rp ${(w.initialBalance || 0).toLocaleString('id-ID')})\n`;
-          });
+        let summaryText = '';
+        if (hasBatchWallets || hasBatchCategories) {
+          summaryText = `📋 *Draf Penambahan Pos Keuangan:*\n`;
+          if (hasBatchWallets) {
+            summaryText += `\n💳 *Dompet Baru (${processed.wallets!.length}):*\n`;
+            processed.wallets!.forEach((w, i) => {
+              summaryText += `${i + 1}. ${w.name} (${w.type || 'CASH'} - Saldo: Rp ${(w.initialBalance || 0).toLocaleString('id-ID')})\n`;
+            });
+          }
+          if (hasBatchCategories) {
+            summaryText += `\n🏷️ *Kategori Pengeluaran/Pemasukan (${processed.categories!.length}):*\n`;
+            processed.categories!.forEach((c, i) => {
+              summaryText += `${i + 1}. ${c.name}${c.monthlyBudget ? ` (Budget: Rp ${c.monthlyBudget.toLocaleString('id-ID')})` : ''}\n`;
+            });
+          }
+          summaryText += `\n👉 *Balas "Ya" untuk menyetujui pembuatan pos-pos di atas sekaligus! 🎀*`;
+        } else {
+          summaryText =
+            `📋 *Draf Pembuatan Dompet Baru:*\n` +
+            `• *Nama Dompet*: ${processed.walletName}\n` +
+            `• *Tipe*: ${processed.walletType || 'BANK'}\n` +
+            `• *Saldo Awal*: Rp ${(processed.initialBalance || 0).toLocaleString('id-ID')}\n\n` +
+            `👉 *Balas "Ya" untuk menyetujui, atau ketik koreksi Anda.*`;
         }
-        if (hasBatchCategories) {
-          summaryText += `\n🏷️ *Kategori Pengeluaran/Pemasukan (${processed.categories!.length}):*\n`;
-          processed.categories!.forEach((c, i) => {
-            summaryText += `${i + 1}. ${c.name}${c.monthlyBudget ? ` (Budget: Rp ${c.monthlyBudget.toLocaleString('id-ID')})` : ''}\n`;
-          });
-        }
-        summaryText += `\n👉 *Balas "Ya" untuk menyetujui pembuatan pos-pos di atas sekaligus! 🎀*`;
-      } else {
-        summaryText =
-          `📋 *Draf Pembuatan Dompet Baru:*\n` +
-          `• *Nama Dompet*: ${processed.walletName}\n` +
-          `• *Tipe*: ${processed.walletType || 'BANK'}\n` +
-          `• *Saldo Awal*: Rp ${(processed.initialBalance || 0).toLocaleString('id-ID')}\n\n` +
+
+        await ApprovalEngine.createPendingAction(
+          familyId,
+          user.id,
+          ActionType.CREATE_WALLET,
+          {
+            name: processed.walletName,
+            type: processed.walletType || 'BANK',
+            initialBalance: processed.initialBalance || 0,
+            wallets: processed.wallets,
+            categories: processed.categories,
+          },
+          summaryText
+        );
+        await this.logChatMessage({
+          familyId,
+          userId: user.id,
+          platform: BotChatPlatform.WHATSAPP,
+          senderIdentifier: phoneNumber,
+          senderName: user.name,
+          messageType: 'text',
+          rawContent: textContent,
+          replyContent: summaryText,
+          status: BotChatStatus.PENDING_APPROVAL,
+          metadata: {
+            actionType: 'CREATE_WALLET',
+            walletsCount: processed.wallets?.length,
+            categoriesCount: processed.categories?.length,
+            name: processed.walletName,
+          },
+        });
+        await this.sendWhatsAppMessage(replyJid, summaryText);
+        return;
+      }
+
+      if (processed.actionType === 'UPDATE_WALLET') {
+        const targetWallet = wallets.find((w) => w.id === processed.targetWalletId || w.name.toLowerCase() === (processed.walletName || '').toLowerCase()) || wallets[0];
+        const newName = processed.newWalletName || targetWallet?.name;
+        const summaryText =
+          `📋 *Draf Pembaruan Nama Dompet:*\n` +
+          `• *Dompet*: ${targetWallet?.name}\n` +
+          `• *Nama Baru*: ${newName}\n\n` +
           `👉 *Balas "Ya" untuk menyetujui, atau ketik koreksi Anda.*`;
+
+        await ApprovalEngine.createPendingAction(
+          familyId,
+          user.id,
+          ActionType.UPDATE_WALLET,
+          {
+            walletId: targetWallet.id,
+            newName,
+            newType: processed.newWalletType,
+          },
+          summaryText
+        );
+        await this.logChatMessage({
+          familyId,
+          userId: user.id,
+          platform: BotChatPlatform.WHATSAPP,
+          senderIdentifier: phoneNumber,
+          senderName: user.name,
+          messageType: 'text',
+          rawContent: textContent,
+          replyContent: summaryText,
+          status: BotChatStatus.PENDING_APPROVAL,
+          metadata: { actionType: 'UPDATE_WALLET', oldName: targetWallet?.name, newName },
+        });
+        await this.sendWhatsAppMessage(replyJid, summaryText);
+        return;
       }
 
-      await ApprovalEngine.createPendingAction(
-        familyId,
-        user.id,
-        ActionType.CREATE_WALLET,
-        {
-          name: processed.walletName,
-          type: processed.walletType || 'BANK',
-          initialBalance: processed.initialBalance || 0,
-          wallets: processed.wallets,
-          categories: processed.categories,
-        },
-        summaryText
-      );
-      await this.logChatMessage({
-        familyId,
-        userId: user.id,
-        platform: BotChatPlatform.WHATSAPP,
-        senderIdentifier: phoneNumber,
-        senderName: user.name,
-        messageType: 'text',
-        rawContent: textContent,
-        replyContent: summaryText,
-        status: BotChatStatus.PENDING_APPROVAL,
-        metadata: {
-          actionType: 'CREATE_WALLET',
-          walletsCount: processed.wallets?.length,
-          categoriesCount: processed.categories?.length,
-          name: processed.walletName,
-        },
-      });
-      await this.sendWhatsAppMessage(replyJid, summaryText, { quoted: msg });
-      return;
-    }
+      if (processed.actionType === 'TRANSFER_WALLET') {
+        const srcWallet = wallets.find((w) => w.id === processed.sourceWalletId) || wallets[0];
+        const tgtWallet = wallets.find((w) => w.id === processed.targetWalletId) || wallets[1] || wallets[0];
+        const numAmount = processed.amount || 0;
 
-    if (processed.actionType === 'UPDATE_WALLET') {
-      const targetWallet = wallets.find((w) => w.id === processed.targetWalletId || w.name.toLowerCase() === (processed.walletName || '').toLowerCase()) || wallets[0];
-      const newName = processed.newWalletName || targetWallet?.name;
-      const summaryText =
-        `📋 *Draf Pembaruan Nama Dompet:*\n` +
-        `• *Dompet*: ${targetWallet?.name}\n` +
-        `• *Nama Baru*: ${newName}\n\n` +
-        `👉 *Balas "Ya" untuk menyetujui, atau ketik koreksi Anda.*`;
+        const summaryText =
+          `📋 *Draf Transfer Antar Dompet:*\n` +
+          `• *Dari Dompet*: ${srcWallet?.name}\n` +
+          `• *Ke Dompet*: ${tgtWallet?.name}\n` +
+          `• *Nominal*: Rp ${numAmount.toLocaleString('id-ID')}\n\n` +
+          `👉 *Balas "Ya" untuk menyetujui transfer ini, atau ketik koreksi Anda.*`;
 
-      await ApprovalEngine.createPendingAction(
-        familyId,
-        user.id,
-        ActionType.UPDATE_WALLET,
-        {
-          walletId: targetWallet.id,
-          newName,
-          newType: processed.newWalletType,
-        },
-        summaryText
-      );
-      await this.logChatMessage({
-        familyId,
-        userId: user.id,
-        platform: BotChatPlatform.WHATSAPP,
-        senderIdentifier: phoneNumber,
-        senderName: user.name,
-        messageType: 'text',
-        rawContent: textContent,
-        replyContent: summaryText,
-        status: BotChatStatus.PENDING_APPROVAL,
-        metadata: { actionType: 'UPDATE_WALLET', oldName: targetWallet?.name, newName },
-      });
-      await this.sendWhatsAppMessage(replyJid, summaryText, { quoted: msg });
-      return;
-    }
+        await ApprovalEngine.createPendingAction(
+          familyId,
+          user.id,
+          ActionType.TRANSFER_WALLET,
+          {
+            sourceWalletId: srcWallet.id,
+            targetWalletId: tgtWallet.id,
+            amount: numAmount,
+            description: processed.description || 'Transfer Antar Dompet',
+            inputSource: InputSource.WHATSAPP_TEXT,
+          },
+          summaryText
+        );
+        await this.logChatMessage({
+          familyId,
+          userId: user.id,
+          platform: BotChatPlatform.WHATSAPP,
+          senderIdentifier: phoneNumber,
+          senderName: user.name,
+          messageType: 'text',
+          rawContent: textContent,
+          replyContent: summaryText,
+          status: BotChatStatus.PENDING_APPROVAL,
+          metadata: { actionType: 'TRANSFER_WALLET', amount: numAmount },
+        });
+        await this.sendWhatsAppMessage(replyJid, summaryText);
+        return;
+      }
 
-    if (processed.actionType === 'TRANSFER_WALLET') {
-      const srcWallet = wallets.find((w) => w.id === processed.sourceWalletId) || wallets[0];
-      const tgtWallet = wallets.find((w) => w.id === processed.targetWalletId) || wallets[1] || wallets[0];
-      const numAmount = processed.amount || 0;
+      if (processed.actionType === 'SET_BUDGET') {
+        const hasBatchCategories = Array.isArray(processed.categories) && processed.categories.length > 0;
+        const hasBatchWallets = Array.isArray(processed.wallets) && processed.wallets.length > 0;
 
-      const summaryText =
-        `📋 *Draf Transfer Antar Dompet:*\n` +
-        `• *Dari Dompet*: ${srcWallet?.name}\n` +
-        `• *Ke Dompet*: ${tgtWallet?.name}\n` +
-        `• *Nominal*: Rp ${numAmount.toLocaleString('id-ID')}\n\n` +
-        `👉 *Balas "Ya" untuk menyetujui transfer ini, atau ketik koreksi Anda.*`;
+        let summaryText = '';
+        if (hasBatchCategories || hasBatchWallets) {
+          summaryText = `📋 *Draf Penambahan Pos Keuangan:*\n`;
+          if (hasBatchCategories) {
+            summaryText += `\n🏷️ *Kategori Baru (${processed.categories!.length}):*\n`;
+            processed.categories!.forEach((c, i) => {
+              summaryText += `${i + 1}. ${c.name}${c.monthlyBudget ? ` (Budget: Rp ${c.monthlyBudget.toLocaleString('id-ID')})` : ''}\n`;
+            });
+          }
+          if (hasBatchWallets) {
+            summaryText += `\n💳 *Dompet Baru (${processed.wallets!.length}):*\n`;
+            processed.wallets!.forEach((w, i) => {
+              summaryText += `${i + 1}. ${w.name} (${w.type || 'CASH'} - Saldo: Rp ${(w.initialBalance || 0).toLocaleString('id-ID')})\n`;
+            });
+          }
+          summaryText += `\n👉 *Balas "Ya" untuk menyetujui pembuatan pos-pos di atas sekaligus! 🎀*`;
+        } else {
+          const targetCat = categories.find((c) => c.id === processed.categoryId || c.name.toLowerCase() === (processed.categoryName || '').toLowerCase());
+          const catName = targetCat?.name || processed.categoryName || 'Kategori';
+          const monthlyBudget = processed.monthlyBudget || 0;
 
-      await ApprovalEngine.createPendingAction(
-        familyId,
-        user.id,
-        ActionType.TRANSFER_WALLET,
-        {
-          sourceWalletId: srcWallet.id,
-          targetWalletId: tgtWallet.id,
-          amount: numAmount,
-          description: processed.description || 'Transfer Antar Dompet',
-          inputSource: InputSource.WHATSAPP_TEXT,
-        },
-        summaryText
-      );
-      await this.logChatMessage({
-        familyId,
-        userId: user.id,
-        platform: BotChatPlatform.WHATSAPP,
-        senderIdentifier: phoneNumber,
-        senderName: user.name,
-        messageType: 'text',
-        rawContent: textContent,
-        replyContent: summaryText,
-        status: BotChatStatus.PENDING_APPROVAL,
-        metadata: { actionType: 'TRANSFER_WALLET', amount: numAmount },
-      });
-      await this.sendWhatsAppMessage(replyJid, summaryText, { quoted: msg });
-      return;
-    }
+          summaryText =
+            `📋 *Draf Pengaturan Anggaran (Budget):*\n` +
+            `• *Kategori*: ${catName}\n` +
+            `• *Batas Anggaran Bulanan*: Rp ${monthlyBudget.toLocaleString('id-ID')}\n` +
+            `• *Peringatan Guardrail*: 80% kuota\n\n` +
+            `👉 *Balas "Ya" untuk menyetujui anggaran ini, atau ketik koreksi Anda.*`;
+        }
 
-    if (processed.actionType === 'SET_BUDGET') {
-      const hasBatchCategories = Array.isArray(processed.categories) && processed.categories.length > 0;
-      const hasBatchWallets = Array.isArray(processed.wallets) && processed.wallets.length > 0;
+        await ApprovalEngine.createPendingAction(
+          familyId,
+          user.id,
+          ActionType.SET_BUDGET,
+          {
+            categoryId: processed.categoryId,
+            categoryName: processed.categoryName,
+            monthlyBudget: processed.monthlyBudget,
+            alertThreshold: 80,
+            categories: processed.categories,
+            wallets: processed.wallets,
+          },
+          summaryText
+        );
+        await this.logChatMessage({
+          familyId,
+          userId: user.id,
+          platform: BotChatPlatform.WHATSAPP,
+          senderIdentifier: phoneNumber,
+          senderName: user.name,
+          messageType: 'text',
+          rawContent: textContent,
+          replyContent: summaryText,
+          status: BotChatStatus.PENDING_APPROVAL,
+          metadata: {
+            actionType: 'SET_BUDGET',
+            categoriesCount: processed.categories?.length,
+            walletsCount: processed.wallets?.length,
+          },
+        });
+        await this.sendWhatsAppMessage(replyJid, summaryText);
+        return;
+      }
 
+      if (processed.actionType === 'CREATE_SINKING_FUND') {
+        const defaultWallet = wallets[0];
+        const summaryText =
+          `📋 *Draf Pos Dana Siaga (Sinking Fund):*\n` +
+          `• *Nama Pos*: ${processed.sinkingFundName}\n` +
+          `• *Target Dana*: Rp ${(processed.targetAmount || 0).toLocaleString('id-ID')}\n` +
+          `• *Alokasi Bulanan*: Rp ${(processed.monthlyAlloc || 0).toLocaleString('id-ID')}\n` +
+          `• *Sumber Dana*: ${defaultWallet?.name || 'Utama'}\n\n` +
+          `👉 *Balas "Ya" untuk menyetujui pembuatan pos tabungan ini.*`;
+
+        await ApprovalEngine.createPendingAction(
+          familyId,
+          user.id,
+          ActionType.CREATE_SINKING_FUND,
+          {
+            name: processed.sinkingFundName,
+            targetAmount: processed.targetAmount || 0,
+            monthlyAlloc: processed.monthlyAlloc || 0,
+            sourceWalletId: processed.sourceWalletId || defaultWallet?.id,
+          },
+          summaryText
+        );
+        await this.logChatMessage({
+          familyId,
+          userId: user.id,
+          platform: BotChatPlatform.WHATSAPP,
+          senderIdentifier: phoneNumber,
+          senderName: user.name,
+          messageType: 'text',
+          rawContent: textContent,
+          replyContent: summaryText,
+          status: BotChatStatus.PENDING_APPROVAL,
+          metadata: { actionType: 'CREATE_SINKING_FUND', name: processed.sinkingFundName },
+        });
+        await this.sendWhatsAppMessage(replyJid, summaryText);
+        return;
+      }
+
+      if (processed.actionType === 'CREATE_RECURRING_BILL') {
+        const defaultWallet = wallets[0];
+        const defaultCat = categories[0];
+        const summaryText =
+          `📋 *Draf Jadwal Tagihan Rutin Bulanan:*\n` +
+          `• *Nama Tagihan*: ${processed.billName}\n` +
+          `• *Nominal*: Rp ${(processed.amount || 0).toLocaleString('id-ID')}\n` +
+          `• *Jatuh Tempo*: Tanggal ${processed.dueDayOfMonth || 1} setiap bulan\n` +
+          `• *Sumber Dompet*: ${defaultWallet?.name || 'Utama'}\n\n` +
+          `👉 *Balas "Ya" untuk menyetujui jadwal tagihan ini.*`;
+
+        await ApprovalEngine.createPendingAction(
+          familyId,
+          user.id,
+          ActionType.CREATE_RECURRING_BILL,
+          {
+            name: processed.billName,
+            amount: processed.amount || 0,
+            dueDayOfMonth: processed.dueDayOfMonth || 1,
+            walletId: processed.walletId || defaultWallet?.id,
+            categoryId: processed.categoryId || defaultCat?.id,
+          },
+          summaryText
+        );
+        await this.logChatMessage({
+          familyId,
+          userId: user.id,
+          platform: BotChatPlatform.WHATSAPP,
+          senderIdentifier: phoneNumber,
+          senderName: user.name,
+          messageType: 'text',
+          rawContent: textContent,
+          replyContent: summaryText,
+          status: BotChatStatus.PENDING_APPROVAL,
+          metadata: { actionType: 'CREATE_RECURRING_BILL', name: processed.billName },
+        });
+        await this.sendWhatsAppMessage(replyJid, summaryText);
+        return;
+      }
+
+      if (processed.actionType === 'SET_DEFAULT_WALLET') {
+        const targetWallet = wallets.find((w) => w.id === processed.targetWalletId || w.name.toLowerCase() === (processed.walletName || '').toLowerCase()) || wallets[0];
+        const summaryText =
+          `📋 *Draf Pengaturan Dompet Default Pengeluaran:*\n` +
+          `• *Dompet*: ${targetWallet?.name}\n\n` +
+          `Jika disetujui, setiap pengeluaran baru yang tidak menyebutkan dompet akan otomatis memakai *${targetWallet?.name}*.\n\n` +
+          `👉 *Balas "Ya" untuk menyetujui, atau ketik koreksi Anda.*`;
+
+        await ApprovalEngine.createPendingAction(
+          familyId,
+          user.id,
+          ActionType.SET_DEFAULT_WALLET,
+          {
+            targetWalletId: targetWallet.id,
+            walletName: targetWallet.name,
+          },
+          summaryText
+        );
+        await this.logChatMessage({
+          familyId,
+          userId: user.id,
+          platform: BotChatPlatform.WHATSAPP,
+          senderIdentifier: phoneNumber,
+          senderName: user.name,
+          messageType: 'text',
+          rawContent: textContent,
+          replyContent: summaryText,
+          status: BotChatStatus.PENDING_APPROVAL,
+          metadata: { actionType: 'SET_DEFAULT_WALLET', walletName: targetWallet.name },
+        });
+        await this.sendWhatsAppMessage(replyJid, summaryText);
+        return;
+      }
+
+      // 8. Jika berupa Pencatatan Transaksi Baru (CREATE_TRANSACTION)
+      if (!processed.amount || processed.amount <= 0) {
+        const clarifyText = 'Mohon maaf Kak, Monee belum bisa membaca nominalnya dengan jelas. Boleh disebutkan kembali keperluan dan nominalnya ya Kak? 😊';
+        await this.logChatMessage({
+          familyId,
+          userId: user.id,
+          platform: BotChatPlatform.WHATSAPP,
+          senderIdentifier: phoneNumber,
+          senderName: user.name,
+          messageType: msgType,
+          rawContent: textContent || '[Foto / Suara]',
+          replyContent: clarifyText,
+          status: BotChatStatus.CONSULTATION,
+        });
+        await this.sendWhatsAppMessage(replyJid, clarifyText);
+        return;
+      }
+
+      const targetWallet = wallets.find((w) => w.id === processed.walletId) || wallets[0];
+      const targetCategory = categories.find((c) => c.id === processed.categoryId) || categories[0];
+
+      const hasMultipleItems = Array.isArray(processed.items) && processed.items.length > 1;
       let summaryText = '';
-      if (hasBatchCategories || hasBatchWallets) {
-        summaryText = `📋 *Draf Penambahan Pos Keuangan:*\n`;
-        if (hasBatchCategories) {
-          summaryText += `\n🏷️ *Kategori Baru (${processed.categories!.length}):*\n`;
-          processed.categories!.forEach((c, i) => {
-            summaryText += `${i + 1}. ${c.name}${c.monthlyBudget ? ` (Budget: Rp ${c.monthlyBudget.toLocaleString('id-ID')})` : ''}\n`;
-          });
-        }
-        if (hasBatchWallets) {
-          summaryText += `\n💳 *Dompet Baru (${processed.wallets!.length}):*\n`;
-          processed.wallets!.forEach((w, i) => {
-            summaryText += `${i + 1}. ${w.name} (${w.type || 'CASH'} - Saldo: Rp ${(w.initialBalance || 0).toLocaleString('id-ID')})\n`;
-          });
-        }
-        summaryText += `\n👉 *Balas "Ya" untuk menyetujui pembuatan pos-pos di atas sekaligus! 🎀*`;
-      } else {
-        const targetCat = categories.find((c) => c.id === processed.categoryId || c.name.toLowerCase() === (processed.categoryName || '').toLowerCase());
-        const catName = targetCat?.name || processed.categoryName || 'Kategori';
-        const monthlyBudget = processed.monthlyBudget || 0;
 
+      const effectiveDate = processed.transactionDate || currentDateIso;
+      const dateDisplay = new Date(effectiveDate).toLocaleDateString('id-ID', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      });
+
+      if (hasMultipleItems) {
+        const itemsList = (processed.items || []).map((it, idx) => `  ${idx + 1}. ${it.name}: Rp ${((it.price || 0) * (it.qty || 1)).toLocaleString('id-ID')}`).join('\n');
         summaryText =
-          `📋 *Draf Pengaturan Anggaran (Budget):*\n` +
-          `• *Kategori*: ${catName}\n` +
-          `• *Batas Anggaran Bulanan*: Rp ${monthlyBudget.toLocaleString('id-ID')}\n` +
-          `• *Peringatan Guardrail*: 80% kuota\n\n` +
-          `👉 *Balas "Ya" untuk menyetujui anggaran ini, atau ketik koreksi Anda.*`;
+          `📋 *Draf Pencatatan dari Monee (${processed.items!.length} Item Terpisah):*\n` +
+          itemsList +
+          `\n\n• *Total*: Rp ${processed.amount.toLocaleString('id-ID')}\n` +
+          `• *Tanggal Transaksi*: ${dateDisplay}\n` +
+          `• *Dompet*: ${targetWallet?.name || 'Utama'}\n` +
+          `• *Kategori*: ${targetCategory?.name || 'Umum'}\n\n` +
+          `👉 *Balas "Ya" jika sudah sesuai ya Kak, atau ketik koreksi Anda.*`;
+      } else {
+        summaryText =
+          `📋 *Draf Pencatatan dari Monee:*\n` +
+          `• *Keperluan*: ${processed.description}\n` +
+          `• *Total*: Rp ${processed.amount.toLocaleString('id-ID')}\n` +
+          `• *Tanggal Transaksi*: ${dateDisplay}\n` +
+          `• *Dompet*: ${targetWallet?.name || 'Utama'}\n` +
+          `• *Kategori*: ${targetCategory?.name || 'Umum'}\n\n` +
+          `👉 *Balas "Ya" jika sudah sesuai ya Kak, atau ketik koreksi Anda.*`;
       }
 
-      await ApprovalEngine.createPendingAction(
-        familyId,
-        user.id,
-        ActionType.SET_BUDGET,
-        {
-          categoryId: processed.categoryId,
-          categoryName: processed.categoryName,
-          monthlyBudget: processed.monthlyBudget,
-          alertThreshold: 80,
-          categories: processed.categories,
-          wallets: processed.wallets,
-        },
-        summaryText
-      );
-      await this.logChatMessage({
-        familyId,
-        userId: user.id,
-        platform: BotChatPlatform.WHATSAPP,
-        senderIdentifier: phoneNumber,
-        senderName: user.name,
-        messageType: 'text',
-        rawContent: textContent,
-        replyContent: summaryText,
-        status: BotChatStatus.PENDING_APPROVAL,
-        metadata: {
-          actionType: 'SET_BUDGET',
-          categoriesCount: processed.categories?.length,
-          walletsCount: processed.wallets?.length,
-        },
-      });
-      await this.sendWhatsAppMessage(replyJid, summaryText, { quoted: msg });
-      return;
-    }
-
-    if (processed.actionType === 'CREATE_SINKING_FUND') {
-      const defaultWallet = wallets[0];
-      const summaryText =
-        `📋 *Draf Pos Dana Siaga (Sinking Fund):*\n` +
-        `• *Nama Pos*: ${processed.sinkingFundName}\n` +
-        `• *Target Dana*: Rp ${(processed.targetAmount || 0).toLocaleString('id-ID')}\n` +
-        `• *Alokasi Bulanan*: Rp ${(processed.monthlyAlloc || 0).toLocaleString('id-ID')}\n` +
-        `• *Sumber Dana*: ${defaultWallet?.name || 'Utama'}\n\n` +
-        `👉 *Balas "Ya" untuk menyetujui pembuatan pos tabungan ini.*`;
+      const proposedPayload = {
+        walletId: targetWallet.id,
+        categoryId: targetCategory.id,
+        amount: processed.amount,
+        description: processed.description || 'Pengeluaran Rumah Tangga',
+        type: processed.type === 'INCOME' ? TransactionType.INCOME : TransactionType.EXPENSE,
+        transactionDate: effectiveDate,
+        inputSource: imageBase64 ? InputSource.WHATSAPP_IMAGE_RECEIPT : audioBase64 ? InputSource.WHATSAPP_VOICE_NOTE : InputSource.WHATSAPP_TEXT,
+        items: processed.items,
+      };
 
       await ApprovalEngine.createPendingAction(
         familyId,
         user.id,
-        ActionType.CREATE_SINKING_FUND,
-        {
-          name: processed.sinkingFundName,
-          targetAmount: processed.targetAmount || 0,
-          monthlyAlloc: processed.monthlyAlloc || 0,
-          sourceWalletId: processed.sourceWalletId || defaultWallet?.id,
-        },
+        ActionType.CREATE_TRANSACTION,
+        proposedPayload,
         summaryText
       );
+
       await this.logChatMessage({
         familyId,
         userId: user.id,
         platform: BotChatPlatform.WHATSAPP,
         senderIdentifier: phoneNumber,
         senderName: user.name,
-        messageType: 'text',
-        rawContent: textContent,
+        messageType: imageBase64 ? 'image' : audioBase64 ? 'audio' : 'text',
+        rawContent: textContent || (imageBase64 ? '[Foto Nota]' : '[Pesan Suara]'),
         replyContent: summaryText,
         status: BotChatStatus.PENDING_APPROVAL,
-        metadata: { actionType: 'CREATE_SINKING_FUND', name: processed.sinkingFundName },
+        metadata: { actionType: 'CREATE_TRANSACTION', amount: processed.amount, description: processed.description },
       });
-      await this.sendWhatsAppMessage(replyJid, summaryText, { quoted: msg });
-      return;
-    }
 
-    if (processed.actionType === 'CREATE_RECURRING_BILL') {
-      const defaultWallet = wallets[0];
-      const defaultCat = categories[0];
-      const summaryText =
-        `📋 *Draf Jadwal Tagihan Rutin Bulanan:*\n` +
-        `• *Nama Tagihan*: ${processed.billName}\n` +
-        `• *Nominal*: Rp ${(processed.amount || 0).toLocaleString('id-ID')}\n` +
-        `• *Jatuh Tempo*: Tanggal ${processed.dueDayOfMonth || 1} setiap bulan\n` +
-        `• *Sumber Dompet*: ${defaultWallet?.name || 'Utama'}\n\n` +
-        `👉 *Balas "Ya" untuk menyetujui jadwal tagihan ini.*`;
-
-      await ApprovalEngine.createPendingAction(
-        familyId,
-        user.id,
-        ActionType.CREATE_RECURRING_BILL,
-        {
-          name: processed.billName,
-          amount: processed.amount || 0,
-          dueDayOfMonth: processed.dueDayOfMonth || 1,
-          walletId: processed.walletId || defaultWallet?.id,
-          categoryId: processed.categoryId || defaultCat?.id,
-        },
-        summaryText
-      );
-      await this.logChatMessage({
-        familyId,
-        userId: user.id,
-        platform: BotChatPlatform.WHATSAPP,
-        senderIdentifier: phoneNumber,
-        senderName: user.name,
-        messageType: 'text',
-        rawContent: textContent,
-        replyContent: summaryText,
-        status: BotChatStatus.PENDING_APPROVAL,
-        metadata: { actionType: 'CREATE_RECURRING_BILL', name: processed.billName },
-      });
-      await this.sendWhatsAppMessage(replyJid, summaryText, { quoted: msg });
-      return;
-    }
-
-    if (processed.actionType === 'SET_DEFAULT_WALLET') {
-      const targetWallet = wallets.find((w) => w.id === processed.targetWalletId || w.name.toLowerCase() === (processed.walletName || '').toLowerCase()) || wallets[0];
-      const summaryText =
-        `📋 *Draf Pengaturan Dompet Default Pengeluaran:*\n` +
-        `• *Dompet*: ${targetWallet?.name}\n\n` +
-        `Jika disetujui, setiap pengeluaran baru yang tidak menyebutkan dompet akan otomatis memakai *${targetWallet?.name}*.\n\n` +
-        `👉 *Balas "Ya" untuk menyetujui, atau ketik koreksi Anda.*`;
-
-      await ApprovalEngine.createPendingAction(
-        familyId,
-        user.id,
-        ActionType.SET_DEFAULT_WALLET,
-        {
-          targetWalletId: targetWallet.id,
-          walletName: targetWallet.name,
-        },
-        summaryText
-      );
-      await this.logChatMessage({
-        familyId,
-        userId: user.id,
-        platform: BotChatPlatform.WHATSAPP,
-        senderIdentifier: phoneNumber,
-        senderName: user.name,
-        messageType: 'text',
-        rawContent: textContent,
-        replyContent: summaryText,
-        status: BotChatStatus.PENDING_APPROVAL,
-        metadata: { actionType: 'SET_DEFAULT_WALLET', walletName: targetWallet.name },
-      });
-      await this.sendWhatsAppMessage(replyJid, summaryText, { quoted: msg });
-      return;
-    }
-
-    // 8. Jika berupa Pencatatan Transaksi Baru (CREATE_TRANSACTION)
-    if (!processed.amount || processed.amount <= 0) {
-      const clarifyText = 'Mohon maaf Kak, Monee belum bisa membaca nominalnya dengan jelas. Boleh disebutkan kembali keperluan dan nominalnya ya Kak? 😊';
-      await this.logChatMessage({
-        familyId,
-        userId: user.id,
-        platform: BotChatPlatform.WHATSAPP,
-        senderIdentifier: phoneNumber,
-        senderName: user.name,
-        messageType: msgType,
-        rawContent: textContent || '[Foto / Suara]',
-        replyContent: clarifyText,
-        status: BotChatStatus.CONSULTATION,
-      });
-      await this.sendWhatsAppMessage(replyJid, clarifyText);
-      return;
-    }
-
-    const targetWallet = wallets.find((w) => w.id === processed.walletId) || wallets[0];
-    const targetCategory = categories.find((c) => c.id === processed.categoryId) || categories[0];
-
-    const hasMultipleItems = Array.isArray(processed.items) && processed.items.length > 1;
-    let summaryText = '';
-
-    const effectiveDate = processed.transactionDate || currentDateIso;
-    const dateDisplay = new Date(effectiveDate).toLocaleDateString('id-ID', {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    });
-
-    if (hasMultipleItems) {
-      const itemsList = (processed.items || []).map((it, idx) => `  ${idx + 1}. ${it.name}: Rp ${((it.price || 0) * (it.qty || 1)).toLocaleString('id-ID')}`).join('\n');
-      summaryText =
-        `📋 *Draf Pencatatan dari Monee (${processed.items!.length} Item Terpisah):*\n` +
-        itemsList +
-        `\n\n• *Total*: Rp ${processed.amount.toLocaleString('id-ID')}\n` +
-        `• *Tanggal Transaksi*: ${dateDisplay}\n` +
-        `• *Dompet*: ${targetWallet?.name || 'Utama'}\n` +
-        `• *Kategori*: ${targetCategory?.name || 'Umum'}\n\n` +
-        `👉 *Balas "Ya" jika sudah sesuai ya Kak, atau ketik koreksi Anda.*`;
-    } else {
-      summaryText =
-        `📋 *Draf Pencatatan dari Monee:*\n` +
-        `• *Keperluan*: ${processed.description}\n` +
-        `• *Total*: Rp ${processed.amount.toLocaleString('id-ID')}\n` +
-        `• *Tanggal Transaksi*: ${dateDisplay}\n` +
-        `• *Dompet*: ${targetWallet?.name || 'Utama'}\n` +
-        `• *Kategori*: ${targetCategory?.name || 'Umum'}\n\n` +
-        `👉 *Balas "Ya" jika sudah sesuai ya Kak, atau ketik koreksi Anda.*`;
-    }
-
-    const proposedPayload = {
-      walletId: targetWallet.id,
-      categoryId: targetCategory.id,
-      amount: processed.amount,
-      description: processed.description || 'Pengeluaran Rumah Tangga',
-      type: processed.type === 'INCOME' ? TransactionType.INCOME : TransactionType.EXPENSE,
-      transactionDate: effectiveDate,
-      inputSource: imageBase64 ? InputSource.WHATSAPP_IMAGE_RECEIPT : audioBase64 ? InputSource.WHATSAPP_VOICE_NOTE : InputSource.WHATSAPP_TEXT,
-      items: processed.items,
-    };
-
-    await ApprovalEngine.createPendingAction(
-      familyId,
-      user.id,
-      ActionType.CREATE_TRANSACTION,
-      proposedPayload,
-      summaryText
-    );
-
-    await this.logChatMessage({
-      familyId,
-      userId: user.id,
-      platform: BotChatPlatform.WHATSAPP,
-      senderIdentifier: phoneNumber,
-      senderName: user.name,
-      messageType: imageBase64 ? 'image' : audioBase64 ? 'audio' : 'text',
-      rawContent: textContent || (imageBase64 ? '[Foto Nota]' : '[Pesan Suara]'),
-      replyContent: summaryText,
-      status: BotChatStatus.PENDING_APPROVAL,
-      metadata: { actionType: 'CREATE_TRANSACTION', amount: processed.amount, description: processed.description },
-    });
-
-    await this.sendWhatsAppMessage(replyJid, summaryText, { quoted: msg });
+      await this.sendWhatsAppMessage(replyJid, summaryText);
     } catch (err: any) {
       console.error('❌ [BotGateway] Error handling incoming WhatsApp message:', err);
       const errReply = `Mohon maaf Kak, terjadi kendala saat Monee memproses pesan Anda: ${err?.message || 'Kesalahan sistem'}. Mohon coba lagi sesaat lagi ya Kak. 🎀`;
@@ -1592,22 +1580,20 @@ export class BotGateway {
       ? jid.split(':')[0] + '@' + jid.split('@')[1]
       : `${jid}@s.whatsapp.net`;
 
-    // PRIORITASKAN PHONE NUMBER JID (@s.whatsapp.net)
-    // Pengiriman ke nomor HP adalah standar protokol WhatsApp & mencegah 'Menunggu pesan ini'.
+    // Pertahankan target asli tempat pesan datang (baik thread @lid WhatsApp Web maupun @s.whatsapp.net Ponsel)
+    // Sediakan altTarget untuk fallback jika pengiriman ke target utama terkendala
     let altTarget: string | null = null;
     if (target.endsWith('@lid')) {
       const rawLid = target.split('@')[0]?.split(':')[0];
       const mappedPn = this.lidToJidMap.get(target) || this.lidToJidMap.get(rawLid);
       if (mappedPn && !mappedPn.endsWith('@lid')) {
-        altTarget = target; // fallback ke LID jika nomor HP gagal
-        target = mappedPn.endsWith('@s.whatsapp.net') ? mappedPn : `${mappedPn}@s.whatsapp.net`;
+        altTarget = mappedPn.endsWith('@s.whatsapp.net') ? mappedPn : `${mappedPn}@s.whatsapp.net`;
       }
     } else if (target.endsWith('@s.whatsapp.net')) {
-      // Jika target adalah nomor HP, biarkan target tetap nomor HP!
       const rawPn = target.split('@')[0]?.split(':')[0];
       const mappedLid = this.jidToLidMap.get(target) || this.jidToLidMap.get(rawPn);
       if (mappedLid && mappedLid.endsWith('@lid')) {
-        altTarget = mappedLid; // hanya sebagai fallback sekunder
+        altTarget = mappedLid;
       }
     }
 
@@ -1625,12 +1611,12 @@ export class BotGateway {
       sendOptions.quoted = quoted;
     }
 
-    // Helper untuk mengirim pesan dengan batas waktu aman 12 detik dan auto-retry tanpa quoted jika gagal
+    // Helper untuk mengirim pesan dengan batas waktu aman 8 detik dan auto-retry tanpa quoted jika gagal
     const sendWithTimeout = async (toJid: string, useQuoted: boolean = true) => {
       const currentOpts = useQuoted ? sendOptions : {};
       let timer: NodeJS.Timeout;
       const timeoutPromise = new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`Timeout 12s mengirim ke ${toJid}`)), 12000);
+        timer = setTimeout(() => reject(new Error(`Timeout 8s mengirim ke ${toJid}`)), 8000);
       });
       try {
         const res = await Promise.race([
@@ -1644,7 +1630,7 @@ export class BotGateway {
         // Jika gagal karena quoted context mismatch, coba ulang tanpa quoted!
         if (useQuoted && sendOptions.quoted) {
           console.warn(`[WA Gateway] Gagal kirim dengan quoted ke ${toJid} (${e?.message}), mencoba ulang tanpa quoted...`);
-          return this.waSock!.sendMessage(toJid, msgPayload, {});
+          return await this.waSock!.sendMessage(toJid, msgPayload, {});
         }
         throw e;
       }
@@ -1723,7 +1709,7 @@ export class BotGateway {
             try {
               fs.unlinkSync(path.join(authDir, file));
               console.log(`[WA Gateway] Sesi kontak lokal dibersihkan: ${file}`);
-            } catch (_) {}
+            } catch (_) { }
           }
         }
       }
@@ -1793,7 +1779,7 @@ export class BotGateway {
                 create: { key: file, data: content },
                 update: { data: content },
               });
-            } catch (_) {}
+            } catch (_) { }
           }
         }
       });
