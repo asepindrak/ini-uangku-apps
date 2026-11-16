@@ -43,6 +43,19 @@ export interface LLMPayloadOptions {
     netBalance: number;
   };
   sinkingFunds?: Array<{ name: string; currentAmount: number; targetAmount: number }>;
+  pendingActions?: Array<{
+    id: string;
+    userName?: string;
+    actionType: string;
+    summary: string;
+    proposedDate?: string;
+    createdAt: string;
+  }>;
+  recentChatHistory?: Array<{
+    sender: string;
+    message: string;
+    reply?: string;
+  }>;
 }
 
 export interface ExtractedTransaction {
@@ -331,6 +344,14 @@ Analisa pesan/media dari pengguna dan tentukan intensi:
    - Gunakan format markdown tebal, bullet points, dan format mata uang Rupiah yang rapi (contoh: Rp 50.000).
 
 DATA KEUANGAN KELUARGA TERBARU:
+- Draf Transaksi Menunggu Persetujuan Keluarga (Belum Resmi Dibukukan / Pending Approval):
+${JSON.stringify(options.pendingActions || [], null, 2)}
+PENTING TENTANG PENDING ACTIONS:
+Jika ada draf transaksi di atas, ketika pengguna bertanya tentang transaksi/pengeluaran (hari ini, kemarin, atau periode apapun), Monee WAJIB menjelaskan status transaksi resmi, DAN JUGA secara proaktif mengingatkan jika ada draf yang masih berstatus menunggu persetujuan approval (sebutkan pengaju, tanggal, nominal, dan keperluannya). Tanyakan dengan hangat apakah Kakak ingin menyetujuinya sekarang!
+
+- Riwayat Percakapan Terakhir (Gunakan untuk memahami konteks kelanjutan chat sebelumnya):
+${(options.recentChatHistory || []).map((c) => `* ${c.sender}: "${c.message}"\n  Monee: "${c.reply || ''}"`).join('\n') || 'Belum ada percakapan sebelumnya.'}
+
 - Ringkasan Berdasarkan Periode Waktu:
 ${JSON.stringify(options.timeAggregations || {}, null, 2)}
 
@@ -546,6 +567,19 @@ Jika FINANCIAL_CONSULTATION:
       const messages: any[] = [
         { role: 'system', content: systemPrompt },
       ];
+
+      // Sisipkan riwayat obrolan sebelumnya untuk konteks multi-turn yang akurat
+      if (options.recentChatHistory && options.recentChatHistory.length > 0) {
+        const recentSubset = options.recentChatHistory.slice(-3);
+        for (const chat of recentSubset) {
+          if (chat.message) {
+            messages.push({ role: 'user', content: chat.message });
+          }
+          if (chat.reply) {
+            messages.push({ role: 'assistant', content: chat.reply });
+          }
+        }
+      }
 
       const userContent: any[] = [];
       if (options.rawText) {

@@ -1,5 +1,5 @@
 import { prisma } from '../db.js';
-import { TransactionType } from '@prisma/client';
+import { TransactionType, ActionStatus } from '@prisma/client';
 import { TimezoneService } from './timezone-service.js';
 
 export class FinancialReportsService {
@@ -35,6 +35,38 @@ export class FinancialReportsService {
   }
 
   /**
+   * Catatan Draf Transaksi yang masih pending approval
+   */
+  private static async getPendingNote(familyId: string): Promise<string> {
+    try {
+      const pending = await prisma.pendingAction.findMany({
+        where: {
+          familyId,
+          status: ActionStatus.PENDING_APPROVAL,
+          expiresAt: { gt: new Date() },
+        },
+        include: { user: true },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+      });
+      if (pending.length === 0) return '';
+      const items = pending.map((p) => {
+        const payload = (p.proposedPayload as any) || {};
+        const who = p.user?.name ? `oleh ${p.user.name}` : '';
+        const amt = payload?.amount ? `Rp ${Number(payload.amount).toLocaleString('id-ID')}` : '';
+        return `• ⏳ *${payload?.description || p.summaryText || 'Draf Transaksi'}* ${amt ? `(${amt})` : ''} ${who}`.trim();
+      });
+      return (
+        `\n\n📝 *Draf Menunggu Persetujuan (${pending.length} item):*\n` +
+        items.join('\n') +
+        `\n👉 *Balas "Ya" untuk menyetujui draf transaksi di atas, atau cek menu Persetujuan di web dashboard.*`
+      );
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /**
    * Laporan Pengeluaran & Pemasukan Hari Ini
    */
   static async getHariIniReport(familyId: string): Promise<string> {
@@ -54,9 +86,10 @@ export class FinancialReportsService {
     });
 
     const todayDateLabel = TimezoneService.formatDate(new Date(), tz, { dateStyle: 'full' });
+    const pendingNote = await this.getPendingNote(familyId);
 
     if (transactions.length === 0) {
-      return `☀️ *Laporan Hari Ini (${todayDateLabel})*\n\nBelum ada pengeluaran atau pemasukan yang dicatat hari ini ya Kak. Semangat menjalani hari! 🎀`;
+      return `☀️ *Laporan Hari Ini (${todayDateLabel})*\n\nBelum ada pengeluaran atau pemasukan yang dicatat hari ini ya Kak. Semangat menjalani hari! 🎀` + pendingNote;
     }
 
     let totalExpense = 0;
@@ -80,7 +113,8 @@ export class FinancialReportsService {
       lines.join('\n') +
       `\n\n━━━━━━━━━━━━━━━━━━━━\n` +
       `🔴 *Total Pengeluaran*: Rp ${totalExpense.toLocaleString('id-ID')}\n` +
-      `🟢 *Total Pemasukan*: Rp ${totalIncome.toLocaleString('id-ID')}`
+      `🟢 *Total Pemasukan*: Rp ${totalIncome.toLocaleString('id-ID')}` +
+      pendingNote
     );
   }
 
@@ -107,9 +141,10 @@ export class FinancialReportsService {
     });
 
     const yesterdayLabel = TimezoneService.formatDate(bounds.startOfYesterday, tz, { dateStyle: 'full' });
+    const pendingNote = await this.getPendingNote(familyId);
 
     if (transactions.length === 0) {
-      return `📅 *Laporan Kemarin (${yesterdayLabel})*\n\nTidak ada catatan transaksi kemarin ya Kak.`;
+      return `📅 *Laporan Kemarin (${yesterdayLabel})*\n\nTidak ada catatan transaksi resmi kemarin ya Kak.` + pendingNote;
     }
 
     let totalExpense = 0;
@@ -133,7 +168,8 @@ export class FinancialReportsService {
       lines.join('\n') +
       `\n\n━━━━━━━━━━━━━━━━━━━━\n` +
       `🔴 *Total Pengeluaran Kemarin*: Rp ${totalExpense.toLocaleString('id-ID')}\n` +
-      `🟢 *Total Pemasukan*: Rp ${totalIncome.toLocaleString('id-ID')}`
+      `🟢 *Total Pemasukan*: Rp ${totalIncome.toLocaleString('id-ID')}` +
+      pendingNote
     );
   }
 
@@ -191,6 +227,8 @@ export class FinancialReportsService {
       }
     }
 
+    const pendingNote = await this.getPendingNote(familyId);
+
     return (
       `📊 *Rekap Finansial Bulan Ini (${monthName})*\n\n` +
       `🟢 *Pemasukan*: Rp ${totalIncome.toLocaleString('id-ID')}\n` +
@@ -199,7 +237,8 @@ export class FinancialReportsService {
       (budgetLines.length > 0
         ? `*Status Anggaran (Budget Guardrails):*\n${budgetLines.join('\n')}\n\n`
         : '') +
-      `_Monee siap bantu jaga disiplin finansial keluarga Kakak bersama Ini Uangku! 🎀_`
+      `_Monee siap bantu jaga disiplin finansial keluarga Kakak bersama Ini Uangku! 🎀_` +
+      pendingNote
     );
   }
 

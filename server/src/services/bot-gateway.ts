@@ -876,6 +876,8 @@ export class BotGateway {
         lastMonthAgg,
         thisYearAgg,
         sinkingFunds,
+        pendingActionsList,
+        recentChatList,
       ] = await Promise.all([
         prisma.wallet.findMany({
           where: { familyId },
@@ -929,6 +931,25 @@ export class BotGateway {
           where: { familyId, isActive: true },
           select: { name: true, currentAmount: true, targetAmount: true },
         }),
+        // Draf transaksi menunggu persetujuan (Pending Action)
+        prisma.pendingAction.findMany({
+          where: {
+            familyId,
+            status: 'PENDING_APPROVAL',
+            expiresAt: { gt: new Date() },
+          },
+          include: {
+            user: { select: { name: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+        }),
+        // Riwayat chat terakhir untuk memori percakapan multi-turn
+        prisma.botChatMessage.findMany({
+          where: { familyId },
+          orderBy: { createdAt: 'desc' },
+          take: 6,
+        }),
       ]);
 
       const getSums = (aggList: any[]) => {
@@ -973,6 +994,27 @@ export class BotGateway {
         currentAmount: Number(s.currentAmount),
         targetAmount: Number(s.targetAmount),
       }));
+
+      const formattedPending = (pendingActionsList || []).map((p) => {
+        const payload = (p.proposedPayload as any) || {};
+        return {
+          id: p.id,
+          userName: p.user?.name || 'Anggota Keluarga',
+          actionType: p.actionType,
+          summary: p.summaryText || `${payload?.description || 'Transaksi'} Rp ${(payload?.amount || 0).toLocaleString('id-ID')}`,
+          proposedDate: payload?.transactionDate || null,
+          createdAt: TimezoneService.formatDate(p.createdAt, tz, { dateStyle: 'medium', timeStyle: 'short' }),
+        };
+      });
+
+      const formattedChatHistory = (recentChatList || [])
+        .slice()
+        .reverse()
+        .map((c) => ({
+          sender: c.senderName || 'Pengguna',
+          message: c.rawContent,
+          reply: c.replyContent || undefined,
+        }));
 
       let imageBase64: string | undefined = undefined;
       let audioBase64: string | undefined = undefined;
@@ -1050,6 +1092,8 @@ export class BotGateway {
           netBalance: thisMonthSums.income - thisMonthSums.expense,
         },
         sinkingFunds: formattedSinking,
+        pendingActions: formattedPending,
+        recentChatHistory: formattedChatHistory,
       });
 
       // 6. Jika berupa Pertanyaan / Konsultasi Finansial
