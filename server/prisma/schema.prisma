@@ -31,6 +31,7 @@ model Family {
   whitelists      BotWhitelist[]
   llmConfig       LlmConfig?
   botChatMessages BotChatMessage[]
+  memories        FamilyMemory[]
 }
 
 // 2. User & Peran
@@ -61,6 +62,7 @@ model User {
   transactions    Transaction[]
   pendingActions  PendingAction[]
   botChatMessages BotChatMessage[]
+  memories        FamilyMemory[]
 }
 
 // 3. Multi-Wallet
@@ -328,4 +330,19 @@ model BotChatMessage {
 
   @@index([familyId, createdAt])
   @@index([senderIdentifier])
+}
+
+// 14. Memori Jangka Panjang & Instruksi Khusus Keluarga (Persistent Bot Memory)
+model FamilyMemory {
+  id        String   @id @default(uuid())
+  familyId  String
+  family    Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  category  String   @default("GENERAL") // "PREFERENCE" | "RULE" | "IDENTITY" | "NOTE" | "GENERAL"
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([familyId])
 }

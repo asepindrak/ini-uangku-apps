@@ -17,6 +17,7 @@ import { LLMProviderService } from './llm-provider.js';
 import { ApprovalEngine } from './approval-engine.js';
 import { FinancialReportsService } from './financial-reports.js';
 import { TimezoneService } from './timezone-service.js';
+import { MemoryService } from './memory-service.js';
 import { normalizeBaileysSender, normalizePhone } from '../utils/phone.js';
 import { ActionType, ActionStatus, InputSource, TransactionType, BotChatPlatform, BotChatStatus } from '@prisma/client';
 
@@ -645,6 +646,29 @@ export class BotGateway {
       msg.message?.imageMessage?.caption ||
       '';
 
+    // Ekstrak pesan yang di-reply / dikutip (Quoted Context)
+    const contextInfo =
+      msg.message?.extendedTextMessage?.contextInfo ||
+      msg.message?.imageMessage?.contextInfo ||
+      msg.message?.audioMessage?.contextInfo ||
+      msg.message?.videoMessage?.contextInfo;
+
+    const quotedMsg = contextInfo?.quotedMessage;
+    let quotedText = '';
+    let quotedSender = '';
+
+    if (quotedMsg) {
+      quotedText =
+        quotedMsg.conversation ||
+        quotedMsg.extendedTextMessage?.text ||
+        quotedMsg.imageMessage?.caption ||
+        quotedMsg.videoMessage?.caption ||
+        quotedMsg.documentMessage?.caption ||
+        quotedMsg.documentMessage?.fileName ||
+        '';
+      quotedSender = contextInfo?.participant ? normalizePhone(contextInfo.participant).fullNumber : '';
+    }
+
     let user: any = null;
     let replyJid = cleanJid;
 
@@ -878,6 +902,7 @@ export class BotGateway {
         sinkingFunds,
         pendingActionsList,
         recentChatList,
+        familyMemoriesList,
       ] = await Promise.all([
         prisma.wallet.findMany({
           where: { familyId },
@@ -950,6 +975,8 @@ export class BotGateway {
           orderBy: { createdAt: 'desc' },
           take: 6,
         }),
+        // Memori jangka panjang & instruksi khusus keluarga
+        MemoryService.getMemories(familyId),
       ]);
 
       const getSums = (aggList: any[]) => {
@@ -1046,9 +1073,34 @@ export class BotGateway {
         } catch (err) {
           console.error('Gagal mengunduh audio WA:', err);
         }
+      } else if (!imageBase64 && quotedMsg?.imageMessage) {
+        // Jika pengguna me-reply foto nota sebelumnya dengan kata seperti "ini" atau "catat ini"
+        await this.sendWhatsAppMessage(replyJid, '🔍 Sedang membaca foto nota yang Kakak kutip dengan AI...');
+        try {
+          const fakeQuotedMsg = {
+            key: {
+              remoteJid: rawRemoteJid,
+              id: contextInfo?.stanzaId,
+              participant: contextInfo?.participant,
+            },
+            message: quotedMsg,
+          };
+          const rawBuffer = await downloadMediaMessage(fakeQuotedMsg as any, 'buffer', {});
+          try {
+            const compressed = await sharp(rawBuffer)
+              .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+              .jpeg({ quality: 75 })
+              .toBuffer();
+            imageBase64 = compressed.toString('base64');
+          } catch (compErr) {
+            imageBase64 = rawBuffer.toString('base64');
+          }
+        } catch (err: any) {
+          console.warn('[WA Gateway] Gagal membaca gambar dari quoted message WA:', err?.message || err);
+        }
       }
 
-      if (!textContent && !imageBase64 && !audioBase64) return;
+      if (!textContent && !imageBase64 && !audioBase64 && !quotedText) return;
 
       // 5. Analisa Cerdas dengan AI (Kesadaran Waktu, CRUD Transaksi & Manajemen Finansial Lengkap)
       const processed = await LLMProviderService.processMessage({
@@ -1056,6 +1108,7 @@ export class BotGateway {
         currentDateIso,
         currentDateTimeFormatted,
         rawText: textContent,
+        quotedContent: quotedText ? { text: quotedText, senderName: quotedSender } : undefined,
         imageBase64,
         imageMimeType: 'image/jpeg',
         audioBase64,
@@ -1094,6 +1147,11 @@ export class BotGateway {
         sinkingFunds: formattedSinking,
         pendingActions: formattedPending,
         recentChatHistory: formattedChatHistory,
+        familyMemories: (familyMemoriesList || []).map((m: any) => ({
+          id: m.id,
+          content: m.content,
+          category: m.category,
+        })),
       });
 
       // 6. Jika berupa Pertanyaan / Konsultasi Finansial
@@ -1173,6 +1231,57 @@ export class BotGateway {
           await this.sendWhatsAppMessage(replyJid, errMsg);
           return;
         }
+      }
+
+      // 6.6 Cabang Simpan / Lupakan Memori Jangka Panjang (Persistent Family Memory)
+      if (processed.actionType === 'SAVE_MEMORY') {
+        const memoryContent = processed.memoryContent || textContent;
+        await MemoryService.saveMemory(familyId, memoryContent, user.id, processed.memoryCategory || 'GENERAL');
+
+        const replyMsg =
+          `🧠 *Siap Kak ${user.name}!* 🎀\n\n` +
+          `Monee sudah simpan instruksi ini ke ingatan permanen Monee:\n` +
+          `📌 *"${memoryContent}"*\n\n` +
+          `Monee akan selalu mengingat dan mematuhi instruksi ini setiap kali mendampingi perencanaan keuangan keluarga Kakak! 🥰`;
+
+        await this.logChatMessage({
+          familyId,
+          userId: user.id,
+          platform: BotChatPlatform.WHATSAPP,
+          senderIdentifier: phoneNumber,
+          senderName: user.name,
+          messageType: 'text',
+          rawContent: textContent,
+          replyContent: replyMsg,
+          status: BotChatStatus.SUCCESS,
+          metadata: { actionType: 'SAVE_MEMORY', memoryContent, category: processed.memoryCategory },
+        });
+        await this.sendWhatsAppMessage(replyJid, replyMsg);
+        return;
+      }
+
+      if (processed.actionType === 'FORGET_MEMORY') {
+        const keyword = processed.memorySearchKeyword || '';
+        const count = await MemoryService.forgetMemory(familyId, keyword, processed.targetMemoryId);
+
+        const replyMsg = count > 0
+          ? `🗑️ *Siap Kak ${user.name}!* 🎀\n\nMonee sudah melupakan instruksi terkait *"${keyword}"* dari ingatan permanen Monee.`
+          : `Monee sudah cek ingatan Monee, tapi belum menemukan instruksi yang cocok dengan kata kunci *"${keyword}"*, Kak. 🎀`;
+
+        await this.logChatMessage({
+          familyId,
+          userId: user.id,
+          platform: BotChatPlatform.WHATSAPP,
+          senderIdentifier: phoneNumber,
+          senderName: user.name,
+          messageType: 'text',
+          rawContent: textContent,
+          replyContent: replyMsg,
+          status: BotChatStatus.SUCCESS,
+          metadata: { actionType: 'FORGET_MEMORY', keyword, deletedCount: count },
+        });
+        await this.sendWhatsAppMessage(replyJid, replyMsg);
+        return;
       }
 
       // 7. Cabang berdasarkan Action Type Manajemen Keuangan:

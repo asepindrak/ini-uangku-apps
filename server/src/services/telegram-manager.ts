@@ -5,6 +5,7 @@ import { ApprovalEngine } from './approval-engine.js';
 import { FinancialReportsService } from './financial-reports.js';
 import { TimezoneService } from './timezone-service.js';
 import { BotGateway } from './bot-gateway.js';
+import { MemoryService } from './memory-service.js';
 import { ActionType, ActionStatus, InputSource, TransactionType, BotChatPlatform, BotChatStatus } from '@prisma/client';
 
 export class TelegramManager {
@@ -353,6 +354,11 @@ export class TelegramManager {
     const chatId = String(ctx.from?.id);
     const textContent = ctx.message?.text || ctx.message?.caption || '';
 
+    // Ekstrak pesan yang di-reply / dikutip di Telegram jika ada
+    const replyMsg = ctx.message?.reply_to_message;
+    const quotedText = replyMsg?.text || replyMsg?.caption || '';
+    const quotedSender = replyMsg?.from?.first_name || '';
+
     // 1. Identifikasi User dan Keluarga pengirim
     let user = await prisma.user.findFirst({
       where: {
@@ -444,6 +450,7 @@ export class TelegramManager {
       sinkingFunds,
       pendingActionsList,
       recentChatList,
+      familyMemoriesList,
     ] = await Promise.all([
       prisma.wallet.findMany({
         where: { familyId },
@@ -507,6 +514,7 @@ export class TelegramManager {
         orderBy: { createdAt: 'desc' },
         take: 6,
       }),
+      MemoryService.getMemories(familyId),
     ]);
 
     const getSums = (aggList: any[]) => {
@@ -609,7 +617,24 @@ export class TelegramManager {
       }
     }
 
-    if (!textContent && !imageBase64 && !audioBase64) return;
+    // Jika pesan saat ini tidak ada foto, tapi me-reply foto nota sebelumnya
+    if (!imageBase64 && replyMsg?.photo && replyMsg.photo.length > 0) {
+      await ctx.reply('🔍 Monee sedang membaca foto nota yang Kakak kutip dengan AI...');
+      try {
+        const photo = replyMsg.photo[replyMsg.photo.length - 1];
+        const file = await ctx.api.getFile(photo.file_id);
+        if (file.file_path) {
+          const fileUrl = `https://api.telegram.org/file/bot${botToken}/${file.file_path}`;
+          const res = await fetch(fileUrl);
+          const buf = Buffer.from(await res.arrayBuffer());
+          imageBase64 = buf.toString('base64');
+        }
+      } catch (err) {
+        console.error('Gagal mengunduh quoted photo dari Telegram:', err);
+      }
+    }
+
+    if (!textContent && !imageBase64 && !audioBase64 && !quotedText) return;
 
     // 6. Analisa Cerdas dengan AI (Kesadaran Waktu, CRUD Transaksi & Manajemen Finansial Lengkap)
     const processed = await LLMProviderService.processMessage({
@@ -617,6 +642,7 @@ export class TelegramManager {
       currentDateIso,
       currentDateTimeFormatted,
       rawText: textContent,
+      quotedContent: quotedText ? { text: quotedText, senderName: quotedSender } : undefined,
       imageBase64,
       imageMimeType: 'image/jpeg',
       audioBase64,
@@ -655,6 +681,11 @@ export class TelegramManager {
       sinkingFunds: formattedSinking,
       pendingActions: formattedPending,
       recentChatHistory: formattedChatHistory,
+      familyMemories: (familyMemoriesList || []).map((m: any) => ({
+        id: m.id,
+        content: m.content,
+        category: m.category,
+      })),
     });
 
     // 7. Jika berupa Pertanyaan / Konsultasi Finansial
@@ -695,6 +726,57 @@ export class TelegramManager {
         await ctx.reply(`Mohon maaf Kak, ${err?.message || 'terjadi kendala saat memproses persetujuan draf'}. 🎀`, { parse_mode: 'Markdown' });
         return;
       }
+    }
+
+    // 7.6 Cabang Simpan / Lupakan Memori Jangka Panjang (Persistent Family Memory)
+    if (processed.actionType === 'SAVE_MEMORY') {
+      const memoryContent = processed.memoryContent || textContent;
+      await MemoryService.saveMemory(familyId, memoryContent, user.id, processed.memoryCategory || 'GENERAL');
+
+      const replyMsg =
+        `🧠 *Siap Kak ${user.name}!* 🎀\n\n` +
+        `Monee sudah simpan instruksi ini ke ingatan permanen Monee:\n` +
+        `📌 *"${memoryContent}"*\n\n` +
+        `Monee akan selalu mengingat dan mematuhi instruksi ini setiap kali mendampingi perencanaan keuangan keluarga Kakak! 🥰`;
+
+      await BotGateway.logChatMessage({
+        familyId,
+        userId: user.id,
+        platform: BotChatPlatform.TELEGRAM,
+        senderIdentifier: chatId,
+        senderName: user.name,
+        messageType: 'text',
+        rawContent: textContent,
+        replyContent: replyMsg,
+        status: BotChatStatus.SUCCESS,
+        metadata: { actionType: 'SAVE_MEMORY', memoryContent, category: processed.memoryCategory },
+      });
+      await ctx.reply(replyMsg, { parse_mode: 'Markdown' });
+      return;
+    }
+
+    if (processed.actionType === 'FORGET_MEMORY') {
+      const keyword = processed.memorySearchKeyword || '';
+      const count = await MemoryService.forgetMemory(familyId, keyword, processed.targetMemoryId);
+
+      const replyMsg = count > 0
+        ? `🗑️ *Siap Kak ${user.name}!* 🎀\n\nMonee sudah melupakan instruksi terkait *"${keyword}"* dari ingatan permanen Monee.`
+        : `Monee sudah cek ingatan Monee, tapi belum menemukan instruksi yang cocok dengan kata kunci *"${keyword}"*, Kak. 🎀`;
+
+      await BotGateway.logChatMessage({
+        familyId,
+        userId: user.id,
+        platform: BotChatPlatform.TELEGRAM,
+        senderIdentifier: chatId,
+        senderName: user.name,
+        messageType: 'text',
+        rawContent: textContent,
+        replyContent: replyMsg,
+        status: BotChatStatus.SUCCESS,
+        metadata: { actionType: 'FORGET_MEMORY', keyword, deletedCount: count },
+      });
+      await ctx.reply(replyMsg, { parse_mode: 'Markdown' });
+      return;
     }
 
     // 8. Helper pembuatan draf dengan tombol InlineKeyboard interaktif

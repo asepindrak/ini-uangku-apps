@@ -56,6 +56,15 @@ export interface LLMPayloadOptions {
     message: string;
     reply?: string;
   }>;
+  quotedContent?: {
+    text?: string;
+    senderName?: string;
+  };
+  familyMemories?: Array<{
+    id: string;
+    content: string;
+    category?: string;
+  }>;
 }
 
 export interface ExtractedTransaction {
@@ -84,10 +93,18 @@ export interface ProcessedMessageResult {
     | 'SET_DEFAULT_WALLET'
     | 'UPDATE_WALLET'
     | 'APPROVE_PENDING'
-    | 'REJECT_PENDING';
+    | 'REJECT_PENDING'
+    | 'SAVE_MEMORY'
+    | 'FORGET_MEMORY';
   
   // APPROVE_PENDING & REJECT_PENDING:
   targetPendingId?: string;
+
+  // SAVE_MEMORY & FORGET_MEMORY:
+  memoryContent?: string;
+  memoryCategory?: string;
+  memorySearchKeyword?: string;
+  targetMemoryId?: string;
 
   // CREATE_TRANSACTION:
   amount?: number;
@@ -351,6 +368,15 @@ Analisa pesan/media dari pengguna dan tentukan intensi:
       - Terpicu saat pengguna mengirim pesan penolakan atau pembatalan dalam bahasa alami, kalimat santai, maupun penjelasan panjang.
       - Contoh: "tolak aja", "batalin ya draf tadi", "gak jadi beli tabung gas tolak aja monee", "batalkan drafnya", "jangan dicatat ya", "draf kemarin cancel", "tolak draf belanjaan chibi".
       - Cocokkan "targetPendingId" dengan ID dari daftar "Draf Transaksi Menunggu Persetujuan Keluarga".
+   m. "SAVE_MEMORY":
+      - Terpicu saat pengguna meminta Monee MENGINGAT instruksi, aturan, preferensi dompet/kategori, nama panggilan keluarga, atau catatan penting keluarga.
+      - Contoh: "Monee ingat ya kalau beli bensin selalu pakai BCA", "Monee tolong ingat jatah jajan anak 20rb sehari", "ingat ya nama istriku Chibi", "catat di ingatanmu: nomor meteran listrik 142857".
+      - Isi "memoryContent": ringkasan padat dan jelas dari instruksi yang harus diingat.
+      - Isi "memoryCategory": "PREFERENCE" (jika preferensi dompet/kategori), "RULE" (jika aturan/batas belanja), "IDENTITY" (jika panggilan/nama), atau "NOTE" (jika catatan umum).
+   n. "FORGET_MEMORY":
+      - Terpicu saat pengguna meminta Monee MELUPAKAN / MENGHAPUS instruksi atau ingatan yang pernah disimpan sebelumnya.
+      - Contoh: "Monee lupakan instruksi bensin tadi", "hapus memori tentang jajan anak", "jangan ingat lagi aturan kemarin".
+      - Isi "memorySearchKeyword": kata kunci topik memori yang ingin dihapus.
 
 2. "FINANCIAL_CONSULTATION" (Read / Analisis / Konsultasi Waktu):
    - Terpicu saat pengguna BERTANYA, meminta saran, atau bertanya riwayat transaksi ("hari ini apa aja?", "kemarin habis berapa?", "pengeluaran bulan lalu", "pengeluaran tanggal 15", "tahun ini", "apakah saya boros?", "keuangan aku gimana?").
@@ -359,6 +385,23 @@ Analisa pesan/media dari pengguna dan tentukan intensi:
    - Gunakan format markdown tebal, bullet points, dan format mata uang Rupiah yang rapi (contoh: Rp 50.000).
 
 DATA KEUANGAN KELUARGA TERBARU:
+${options.quotedContent?.text ? `
+- Pesan yang Sedang Dikutip / Di-Reply oleh Pengguna (Quoted / Replied Message):
+  "${options.quotedContent.text}"
+  ${options.quotedContent.senderName ? `(Pengirim pesan yang dikutip: Kak ${options.quotedContent.senderName})` : ''}
+PENTING TENTANG PESAN YANG DI-REPLY:
+Pengguna sedang me-reply pesan di atas! Jika pesan pengguna saat ini sangat singkat atau berupa konfirmasi/perintah seperti "ini", "ini chat nya", "catat ini", "yang ini ya", "ya ini", "catat ya", atau sejenisnya:
+PAHAMI BAHWA MAKSUD DAN DETAIL TRANSAKSI / PERCAKAPAN MERUJUK PADA PESAN YANG DIKUTIP DI ATAS!
+Gunakan nominal, rincian barang, tanggal, atau keperluan dari pesan yang dikutip tersebut untuk mencatat transaksi atau merespon pengguna!
+` : ''}
+- Memori Jangka Panjang & Instruksi Khusus Keluarga (Family Memories):
+${(options.familyMemories && options.familyMemories.length > 0)
+  ? options.familyMemories.map((m, idx) => `  ${idx + 1}. [${m.category || 'NOTE'}] ${m.content}`).join('\n')
+  : '  Belum ada memori atau instruksi khusus yang tersimpan.'}
+PENTING TENTANG MEMORI KELUARGA:
+1. Selalu patuhi preferensi dan aturan di atas saat mencatat transaksi atau memberi saran (misal: preferensi dompet untuk bensin, batas jajan harian, nama panggilan keluarga, dll).
+2. Jika pengguna bertanya apa saja yang diingat Monee (contoh: "kamu ingat apa aja?", "coba sebutkan instruksi yang pernah aku kasih"), rangkum seluruh memori di atas dengan ramah layaknya konsultan keluarga pada FINANCIAL_CONSULTATION!
+
 - Draf Transaksi Menunggu Persetujuan Keluarga (Belum Resmi Dibukukan / Pending Approval):
 ${JSON.stringify(options.pendingActions || [], null, 2)}
 PENTING TENTANG PENDING ACTIONS:
@@ -516,6 +559,23 @@ Jika REJECT_PENDING:
   "actionType": "REJECT_PENDING",
   "targetPendingId": "id-draf-terkait",
   "summaryMessage": "Siap Kak, draf transaksi berhasil dibatalkan dan tidak dicatat ke pembukuan. 🎀"
+}
+
+Jika SAVE_MEMORY:
+{
+  "intent": "TRANSACTION_RECORD",
+  "actionType": "SAVE_MEMORY",
+  "memoryContent": "Kalau beli bensin selalu pakai dompet Kas Tunai",
+  "memoryCategory": "PREFERENCE",
+  "summaryMessage": "🧠 Siap Kak! Monee sudah simpan ke ingatan permanen Monee:\n\"Kalau beli bensin selalu pakai dompet Kas Tunai\"\n\nMonee akan selalu mengingat instruksi ini ke depannya! 🎀"
+}
+
+Jika FORGET_MEMORY:
+{
+  "intent": "TRANSACTION_RECORD",
+  "actionType": "FORGET_MEMORY",
+  "memorySearchKeyword": "bensin",
+  "summaryMessage": "🗑️ Siap Kak, Monee sudah melupakan instruksi tersebut dari ingatan Monee. 🎀"
 }
 
 Jika FINANCIAL_CONSULTATION:
@@ -739,6 +799,19 @@ Jika FINANCIAL_CONSULTATION:
           intent: 'TRANSACTION_RECORD',
           actionType: parsed.actionType,
           targetPendingId: parsed.targetPendingId,
+          summaryMessage: parsed.summaryMessage,
+          replyText: parsed.replyText,
+        };
+      }
+
+      if (parsed.actionType === 'SAVE_MEMORY' || parsed.actionType === 'FORGET_MEMORY') {
+        return {
+          intent: 'TRANSACTION_RECORD',
+          actionType: parsed.actionType,
+          memoryContent: parsed.memoryContent || parsed.content,
+          memoryCategory: parsed.memoryCategory || parsed.category || 'GENERAL',
+          memorySearchKeyword: parsed.memorySearchKeyword || parsed.keyword || parsed.search,
+          targetMemoryId: parsed.targetMemoryId,
           summaryMessage: parsed.summaryMessage,
           replyText: parsed.replyText,
         };

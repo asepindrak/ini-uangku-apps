@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../db.js';
 import { UserRole } from '@prisma/client';
 import { normalizePhone } from '../utils/phone.js';
+import { MemoryService } from '../services/memory-service.js';
 
 export async function familyRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', fastify.authenticate);
@@ -233,5 +234,28 @@ export async function familyRoutes(fastify: FastifyInstance) {
       inviteUrl: `https://iniuangku.raydrop.web.id/join?code=${family?.inviteCode}`,
       familyName: family?.name,
     };
+  });
+
+  // 7. Family Persistent Memories (Instruksi & Memori Bot)
+  fastify.get('/memories', async (request) => {
+    const { familyId } = (request as any).user;
+    return MemoryService.getMemories(familyId);
+  });
+
+  fastify.post('/memories', async (request, reply) => {
+    const { familyId, id: userId } = (request as any).user;
+    const { content, category } = request.body as any;
+    if (!content || !content.trim()) {
+      return reply.status(400).send({ error: 'Isi instruksi/memori tidak boleh kosong.' });
+    }
+    const mem = await MemoryService.saveMemory(familyId, content, userId, category || 'GENERAL');
+    return mem;
+  });
+
+  fastify.delete('/memories/:id', async (request, reply) => {
+    const { familyId } = (request as any).user;
+    const { id } = request.params as any;
+    const count = await MemoryService.forgetMemory(familyId, undefined, id);
+    return { success: true, count };
   });
 }
